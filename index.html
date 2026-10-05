@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Life Insurance CRM</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%277%27 fill=%27%232a78d6%27/%3E%3Ctext x=%2716%27 y=%2721%27 font-family=%27Arial%27 font-size=%2714%27 font-weight=%27700%27 fill=%27white%27 text-anchor=%27middle%27%3ELI%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">LI</span>
+    <span class="brand-name">Life Insurance CRM</span>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-tab="dashboard">Dashboard</button>
+    <button class="tab" data-tab="clients">Clients</button>
+    <button class="tab" data-tab="policies">Policies</button>
+    <button class="tab" data-tab="money">Money</button>
+    <button class="tab tab-accent" data-tab="cheatsheet">Quote Cheat Sheet</button>
+  </nav>
+  <div class="topbar-actions">
+    <button class="btn btn-ghost" id="btn-export" title="Download a backup of all your data">Backup</button>
+    <button class="btn btn-ghost" id="btn-import" title="Restore from a backup file">Restore</button>
+    <input type="file" id="import-file" accept="application/json" hidden>
+    <button class="btn btn-ghost" id="btn-settings">Settings</button>
+  </div>
+</header>
+
+<main id="main">
+  <!-- DASHBOARD -->
+  <section class="view active" id="view-dashboard">
+    <div class="view-head">
+      <h1>Dashboard</h1>
+      <div class="view-actions">
+        <button class="btn btn-primary" data-action="new-client">+ Client</button>
+        <button class="btn" data-action="new-policy">+ Policy</button>
+        <button class="btn" data-action="new-payment">+ Payment</button>
+      </div>
+    </div>
+    <div class="tiles" id="dash-tiles"></div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-head"><h2>Annual premium written by month</h2><span class="muted" id="dash-chart-sub"></span></div>
+        <div id="dash-chart" class="chart"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Pipeline</h2></div>
+        <div id="dash-pipeline"></div>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-head"><h2>Follow-ups due</h2></div>
+        <div id="dash-followups"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Recent activity</h2></div>
+        <div id="dash-recent"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CLIENTS -->
+  <section class="view" id="view-clients">
+    <div class="view-head">
+      <h1>Clients</h1>
+      <div class="view-actions">
+        <input type="search" id="client-search" placeholder="Search name, phone, email, notes…">
+        <select id="client-status-filter"><option value="">All statuses</option></select>
+        <button class="btn btn-primary" data-action="new-client">+ Client</button>
+      </div>
+    </div>
+    <div class="split">
+      <div class="card table-card" id="client-table-wrap"></div>
+      <div class="card detail-card" id="client-detail"><div class="empty">Select a client to see details.</div></div>
+    </div>
+  </section>
+
+  <!-- POLICIES -->
+  <section class="view" id="view-policies">
+    <div class="view-head">
+      <h1>Policies</h1>
+      <div class="view-actions">
+        <input type="search" id="policy-search" placeholder="Search client, carrier, policy #…">
+        <select id="policy-status-filter"><option value="">All statuses</option></select>
+        <select id="policy-type-filter"><option value="">All products</option></select>
+        <button class="btn btn-primary" data-action="new-policy">+ Policy</button>
+      </div>
+    </div>
+    <div class="tiles tiles-4" id="policy-tiles"></div>
+    <div class="card table-card" id="policy-table-wrap"></div>
+  </section>
+
+  <!-- MONEY -->
+  <section class="view" id="view-money">
+    <div class="view-head">
+      <h1>Money</h1>
+      <div class="view-actions">
+        <select id="money-year"></select>
+        <button class="btn btn-primary" data-action="new-payment">+ Payment</button>
+      </div>
+    </div>
+    <div class="tiles" id="money-tiles"></div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-head"><h2>Commission received by month</h2></div>
+        <div id="money-chart" class="chart"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>By carrier</h2></div>
+        <div id="money-carrier"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>Owed to me</h2><span class="muted">Expected advance on issued/paid policies minus what you've logged as received</span></div>
+      <div id="money-owed"></div>
+    </div>
+    <div class="card table-card">
+      <div class="card-head"><h2>Payment ledger</h2></div>
+      <div id="payment-table-wrap"></div>
+    </div>
+  </section>
+
+  <!-- CHEAT SHEET -->
+  <section class="view" id="view-cheatsheet">
+    <div class="view-head">
+      <h1>Quote Cheat Sheet</h1>
+      <span class="muted">Underwriting grids, updated 2026. For producer use only. Always confirm the live e-app decision.</span>
+    </div>
+    <div class="product-picker card">
+      <div class="picker-label">Click a product to quote: <strong>Term Life</strong>, <strong>IUL</strong>, or <strong>Whole Life</strong></div>
+      <div class="picker-buttons">
+        <button class="pick" data-product="term">Term Life</button>
+        <button class="pick" data-product="iul">IUL</button>
+        <button class="pick" data-product="whole">Whole Life</button>
+      </div>
+    </div>
+    <div id="cheat-body" class="cheat-body"></div>
+  </section>
+</main>
+
+<!-- Modal -->
+<div class="modal-backdrop" id="modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-head"><h2 id="modal-title"></h2><button class="btn btn-ghost" id="modal-close" aria-label="Close">✕</button></div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="js/guides-data.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
