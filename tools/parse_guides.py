@@ -93,7 +93,7 @@ def words_to_text(ws):
     for ln in lines:
         s = ' '.join(w['t'] for w in sorted(ln, key=lambda w: w['x0']))
         if out and out[-1].endswith('-') and not out[-1].endswith(' -'):
-            out[-1] = out[-1][:-1] + s   # rejoin hyphenated wraps like "day- one"
+            out[-1] = out[-1] + s   # rejoin hyphenated wraps: "day-" + "one" -> "day-one", "fully-" + "UW" -> "fully-UW"
         else:
             out.append(s)
     return ' '.join(out)
