@@ -8,25 +8,27 @@ It runs two ways:
 
 | | Quick (no login) | Portal (login + bank) |
 |---|---|---|
-| How | open `index.html` in a browser | run the Node server |
+| How | open `index.html` in a browser | run `server.py` with Python |
 | Data lives | in that browser only | on the server, behind your login |
 | Bank tab | no | yes |
 | Good for | trying it out, one computer | daily use, phone + laptop, shared computers |
 
 ## Portal: run the server
 
-```bash
-npm install
-cp .env.example .env      # optional: edit port / Plaid keys
-npm start                 # http://localhost:3000
-```
+You only need Python 3.8 or newer. Nothing to install.
 
-The first visit asks you to **create your login**. After that only that account can sign in: there is no sign-up
-page, five wrong passwords lock sign-in for 15 minutes, and you can change the password under Settings.
+- **Windows:** double-click `start.bat` (or run `python server.py` in the folder).
+- **Mac / Linux:** run `./start.sh` or `python3 server.py`.
 
-To use it from your phone or anywhere outside your house, put it on a small host that runs Node (Render, Railway,
-Fly.io, a $5 VPS) behind HTTPS, and set `COOKIE_SECURE=true` in `.env`. Everything is stored as JSON files in
-`data/` (set `DATA_DIR` to move it). Back that folder up, or use the Backup button in the app.
+Then open http://localhost:3000. The first visit asks you to **create your login**. After that only that account
+can sign in: there is no sign-up page, five wrong passwords lock sign-in for 15 minutes, and you can change the
+password under Settings.
+
+Everything is stored as JSON files in `data/` next to `server.py` (set `DATA_DIR` in `.env` to move it). Back that
+folder up, or use the Backup button in the app. `python test_server.py` runs a quick self-test.
+
+To use it from your phone or outside your house, run it on a small host that has Python (a $5 VPS, PythonAnywhere,
+Render, Railway) behind HTTPS, and set `COOKIE_SECURE=true` in `.env`.
 
 ## Bank tab
 
@@ -38,7 +40,7 @@ Two ways to get deposits in:
 2. **Plaid bank connection** (automatic sync). Create an account at dashboard.plaid.com, put your `client_id`
    and secret in `.env` as `PLAID_CLIENT_ID` / `PLAID_SECRET`, restart, then click **Connect a bank**.
    `PLAID_ENV=sandbox` is free and uses a fake bank for testing; real banks need `production` and Plaid's approval
-   of your use case. Access tokens are encrypted at rest.
+   of your use case. Bank access tokens are kept in `data/bank.json`, so keep the `data/` folder private.
 
 Either way, every deposit is run through the **carrier matching rules** (Mutual of Omaha, Americo, Transamerica,
 Fidelity, Corebridge/AGL, Aetna/Accendo, Foresters, Prosperity/S.USA, American-Amicable, Ethos, National Life
@@ -65,9 +67,9 @@ with no match get a carrier dropdown, and you can ignore anything that isn't com
 
 - `index.html`, `login.html`, `css/app.css`, `js/app.js` – the app.
 - `js/guides-data.js` – underwriting grids, build charts and notes extracted from the two PDFs.
-- `server/` – Express server: login (`index.js`), JSON file store, bank matching (`bank.js`), Plaid (`plaid.js`).
+- `server.py` – the portal server (login, data files, bank matching, Plaid). `start.bat` / `start.sh` launch it.
 - `tools/parse_guides.py` – rebuilds `guides-data.js` from new guide PDFs (needs poppler's `pdftotext`/`pdftoppm`).
-- `test/server.test.js` – `npm test` runs the server smoke test.
+- `test_server.py` – server self-test.
 
 ## Keeping it private
 
