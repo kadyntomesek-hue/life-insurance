@@ -227,6 +227,7 @@ details.section[open] > summary::before { content: "▾ "; }
 @media (max-width: 640px) {
   main { padding: 10px; }
   .topbar { padding: 8px 10px; }
+  .brand { flex: 1; }
   .topbar-actions { margin-left: auto; }
   .tabs { order: 3; width: 100%; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .tab { white-space: nowrap; }
