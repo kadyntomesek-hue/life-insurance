@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in · Life Insurance CRM</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%277%27 fill=%27%232a78d6%27/%3E%3Ctext x=%2716%27 y=%2721%27 font-family=%27Arial%27 font-size=%2714%27 font-weight=%27700%27 fill=%27white%27 text-anchor=%27middle%27%3ELI%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/app.css">
+<style>
+  body { display: grid; place-items: center; min-height: 100vh; padding: 16px; }
+  .login { width: min(400px, 100%); }
+  .login .brand { justify-content: center; margin-bottom: 18px; font-size: 18px; }
+  .login h1 { font-size: 18px; margin-bottom: 4px; }
+  .login .field { margin-bottom: 12px; }
+  .login .btn { width: 100%; padding: 10px; font-size: 14px; }
+  .err { color: var(--bad); font-size: 13px; min-height: 18px; margin: 6px 0; }
+</style>
+</head>
+<body>
+<div class="card login">
+  <div class="brand"><span class="brand-mark">LI</span><span class="brand-name">Life Insurance CRM</span></div>
+  <h1 id="title">Sign in</h1>
+  <p class="muted" id="sub">Your clients and commission data are private to this login.</p>
+  <form id="f" autocomplete="on">
+    <div class="field"><label>Username</label><input name="username" autocomplete="username" required></div>
+    <div class="field"><label>Password</label><input name="password" type="password" autocomplete="current-password" required></div>
+    <div class="field" id="confirm-wrap" hidden><label>Confirm password</label><input name="confirm" type="password" autocomplete="new-password"></div>
+    <div class="err" id="err"></div>
+    <button class="btn btn-primary" id="go">Sign in</button>
+  </form>
+</div>
+<script>
+(async function () {
+  const f = document.getElementById('f'), err = document.getElementById('err');
+  let setup = false;
+  try {
+    const s = await (await fetch('/api/auth/status')).json();
+    if (s.loggedIn) { location.href = '/'; return; }
+    setup = s.setupNeeded;
+  } catch (e) { err.textContent = 'Cannot reach the server.'; }
+  if (setup) {
+    document.getElementById('title').textContent = 'Create your login';
+    document.getElementById('sub').textContent = 'This is a one-time setup. Only this account will be able to sign in.';
+    document.getElementById('confirm-wrap').hidden = false;
+    document.getElementById('go').textContent = 'Create account';
+    f.password.autocomplete = 'new-password';
+  }
+  f.addEventListener('submit', async e => {
+    e.preventDefault(); err.textContent = '';
+    const body = { username: f.username.value.trim(), password: f.password.value };
+    if (setup && f.confirm.value !== body.password) { err.textContent = 'Passwords do not match.'; return; }
+    if (setup && body.password.length < 10) { err.textContent = 'Use at least 10 characters.'; return; }
+    const r = await fetch(setup ? '/api/auth/setup' : '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) location.href = '/'; else err.textContent = j.error || 'Sign-in failed';
+  });
+})();
+</script>
+</body>
+</html>

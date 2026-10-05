@@ -238,3 +238,8 @@ details.section[open] > summary::before { content: "▾ "; }
   .topbar, .view-actions, .product-picker, .cheat-toolbar { display: none !important; }
   .uw-wrap { max-height: none; overflow: visible; }
 }
+
+/* bank */
+#bank-plaid code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+#bank-table table.data tbody tr:hover { background: transparent; }
+#rules-table td { padding: 5px 8px; }

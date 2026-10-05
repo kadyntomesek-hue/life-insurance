@@ -18,6 +18,7 @@
     <button class="tab" data-tab="clients">Clients</button>
     <button class="tab" data-tab="policies">Policies</button>
     <button class="tab" data-tab="money">Money</button>
+    <button class="tab" data-tab="bank" id="tab-bank" hidden>Bank</button>
     <button class="tab tab-accent" data-tab="cheatsheet">Quote Cheat Sheet</button>
   </nav>
   <div class="topbar-actions">
@@ -25,6 +26,7 @@
     <button class="btn btn-ghost" id="btn-import" title="Restore from a backup file">Restore</button>
     <input type="file" id="import-file" accept="application/json" hidden>
     <button class="btn btn-ghost" id="btn-settings">Settings</button>
+    <button class="btn btn-ghost" id="btn-logout" hidden>Log out</button>
   </div>
 </header>
 
@@ -121,6 +123,38 @@
       <div class="card-head"><h2>Payment ledger</h2></div>
       <div id="payment-table-wrap"></div>
     </div>
+  </section>
+
+  <!-- BANK -->
+  <section class="view" id="view-bank">
+    <div class="view-head">
+      <h1>Bank</h1>
+      <span class="muted">Deposits from your bank, matched to carriers and added to your Money ledger.</span>
+    </div>
+    <div class="grid-2">
+      <div class="card" id="bank-plaid"></div>
+      <div class="card" id="bank-csv"></div>
+    </div>
+    <div class="card table-card">
+      <div class="card-head">
+        <h2>Transactions</h2>
+        <div class="view-actions">
+          <select id="bank-filter">
+            <option value="deposits">Carrier deposits not in ledger</option>
+            <option value="unmatched">Deposits with no carrier match</option>
+            <option value="ledgered">Already in ledger</option>
+            <option value="all">Everything imported</option>
+          </select>
+          <button class="btn btn-primary" id="bank-add-all">Add all matched deposits to ledger</button>
+        </div>
+      </div>
+      <div id="bank-table"></div>
+    </div>
+    <details class="section card">
+      <summary>Carrier matching rules</summary>
+      <p class="muted">Each rule is a pattern (regular expression, case-insensitive) tested against the bank description. First match wins. Edit and save to re-match everything that you haven't set by hand.</p>
+      <div id="bank-rules"></div>
+    </details>
   </section>
 
   <!-- CHEAT SHEET -->

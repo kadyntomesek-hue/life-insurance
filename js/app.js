@@ -24,8 +24,9 @@
   ];
 
   // ---------- state ----------
-  let db = load();
-  let ui = { clientSel: null, product: null, cheatSearch: '', showAllCols: false, moneyYear: new Date().getFullYear() };
+  let db = defaults();
+  let remote = false, me = null, saveTimer = null;   // remote = served by server/index.js with a login
+  let ui = { clientSel: null, product: null, cheatSearch: '', showAllCols: false, moneyYear: new Date().getFullYear(), bankFilter: 'deposits' };
 
   function defaults() {
     return {
@@ -33,15 +34,22 @@
       settings: { agentName: '', rates: { 'Term Life': 80, 'IUL': 90, 'Whole Life': 100 }, advance: 75, theme: 'auto' }
     };
   }
-  function load() {
-    try {
-      const raw = localStorage.getItem(STORE_KEY);
-      if (raw) { const d = JSON.parse(raw); return Object.assign(defaults(), d, { settings: Object.assign(defaults().settings, d.settings || {}) }); }
-    } catch (e) { console.warn('load failed', e); }
+  function merge(d) { return Object.assign(defaults(), d, { settings: Object.assign(defaults().settings, (d && d.settings) || {}) }); }
+  function loadLocal() {
+    try { const raw = localStorage.getItem(STORE_KEY); if (raw) return merge(JSON.parse(raw)); } catch (e) { console.warn('load failed', e); }
     return defaults();
   }
+  async function api(path, opts) {
+    const r = await fetch(path, Object.assign({ headers: { 'content-type': 'application/json' }, credentials: 'same-origin' }, opts || {}));
+    if (r.status === 401) { location.href = '/login'; throw new Error('signed out'); }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || r.statusText);
+    return j;
+  }
   function save() {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(db)); } catch (e) { toast('Could not save (storage blocked?)'); }
+    if (!remote) { try { localStorage.setItem(STORE_KEY, JSON.stringify(db)); } catch (e) { toast('Could not save (storage blocked?)'); } return; }
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => api('/api/data', { method: 'PUT', body: JSON.stringify(db) }).catch(e => toast('Save failed: ' + e.message)), 300);
   }
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
   function logActivity(text) { db.activity.unshift({ t: new Date().toISOString(), text }); db.activity = db.activity.slice(0, 200); }
@@ -77,7 +85,7 @@
   $('#tabs').addEventListener('click', e => { const b = e.target.closest('.tab'); if (b) showTab(b.dataset.tab); });
 
   function render(name) {
-    ({ dashboard: renderDashboard, clients: renderClients, policies: renderPolicies, money: renderMoney, cheatsheet: renderCheat }[name] || (() => {}))();
+    ({ dashboard: renderDashboard, clients: renderClients, policies: renderPolicies, money: renderMoney, bank: renderBank, cheatsheet: renderCheat }[name] || (() => {}))();
   }
   function renderAll() { const active = $('.tab.active').dataset.tab; render(active); }
 
@@ -260,13 +268,20 @@
         <div class="field"><label>Default advance %</label><input name="advance" type="number" step="1" value="${esc(s.advance)}"></div>
         <div class="field"><label>Theme</label><select name="theme">${opts(['auto', 'light', 'dark'], s.theme || 'auto')}</select></div>
         <div class="field"><label>Danger zone</label><button type="button" class="btn btn-danger" id="wipe">Erase all data</button></div>
+        ${remote ? `<div class="full" style="border-top:1px solid var(--border);padding-top:10px"><b>Change password</b> (signed in as ${esc(me.username)})</div>
+        <div class="field"><label>Current password</label><input name="pw_cur" type="password" autocomplete="current-password"></div>
+        <div class="field"><label>New password (10+ characters)</label><input name="pw_new" type="password" autocomplete="new-password"></div>` : ''}
         <div class="form-actions full"><div class="muted">Data is stored only in this browser. Use Backup regularly.</div><div class="right"><button type="button" class="btn" data-cancel>Cancel</button><button class="btn btn-primary">Save</button></div></div>
       </form>`, body => {
       const form = $('#settings-form');
-      form.addEventListener('submit', e => {
+      form.addEventListener('submit', async e => {
         e.preventDefault();
         const d = Object.fromEntries(new FormData(form).entries());
         s.agentName = d.agentName; s.rates = { 'Term Life': +d.r_term || 0, 'IUL': +d.r_iul || 0, 'Whole Life': +d.r_whole || 0 }; s.advance = +d.advance || 0; s.theme = d.theme;
+        if (remote && d.pw_new) {
+          try { await api('/api/auth/password', { method: 'POST', body: JSON.stringify({ current: d.pw_cur, next: d.pw_new }) }); toast('Password changed'); }
+          catch (err) { toast(err.message); return; }
+        }
         applyTheme(); save(); closeModal(); renderAll(); toast('Settings saved');
       });
       $('[data-cancel]', body).addEventListener('click', closeModal);
@@ -563,7 +578,150 @@
   function highlight(abbr, key) { const tr = $(`.chart-card[data-abbr="${abbr}"] tr[data-h="${CSS.escape(key)}"]`); if (tr) tr.classList.add('hl'); }
 
   // ---------- boot ----------
-  applyTheme();
-  const start = (location.hash || '#dashboard').slice(1);
-  showTab(['dashboard', 'clients', 'policies', 'money', 'cheatsheet'].includes(start) ? start : 'dashboard');
+  (async function boot() {
+    try {
+      const r = await fetch('/api/me', { credentials: 'same-origin' });
+      if (r.status === 401) { location.href = '/login'; return; }
+      if (r.ok) { me = await r.json(); if (me.server) { remote = true; db = merge(await (await fetch('/api/data', { credentials: 'same-origin' })).json()); } }
+    } catch (e) { /* opened as a plain file or static site: local mode */ }
+    if (!remote) db = loadLocal();
+    $('#tab-bank').hidden = !remote; $('#btn-logout').hidden = !remote;
+    applyTheme();
+    const start = (location.hash || '#dashboard').slice(1);
+    showTab(['dashboard', 'clients', 'policies', 'money', 'bank', 'cheatsheet'].includes(start) ? start : 'dashboard');
+  })();
+  $('#btn-logout').addEventListener('click', async () => { await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }); location.href = '/login'; });
+
+  // ---------- BANK (server mode only) ----------
+  let bankData = null;
+  async function renderBank() {
+    if (!remote) { $('#bank-table').innerHTML = '<div class="empty">Bank tracking needs the server version (see README).</div>'; return; }
+    try { bankData = await api('/api/bank'); } catch (e) { $('#bank-table').innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+    renderBankPlaid(); renderBankCsv(); renderBankTable(); renderBankRules();
+  }
+  function renderBankPlaid() {
+    const p = bankData.plaid, el = $('#bank-plaid');
+    if (!p.configured) {
+      el.innerHTML = `<div class="card-head"><h2>Connect your bank automatically</h2></div>
+        <p>Automatic bank sync uses <b>Plaid</b>, the same service most budgeting apps use. It is not set up yet.</p>
+        <ol class="muted" style="padding-left:18px">
+          <li>Create a free account at dashboard.plaid.com and copy your <b>client_id</b> and <b>sandbox secret</b>.</li>
+          <li>Put them in the server's <code>.env</code> file as <code>PLAID_CLIENT_ID</code> and <code>PLAID_SECRET</code>, then restart the server.</li>
+          <li>Sandbox lets you test with a fake bank. Real banks need Plaid to approve your production access (they ask what the app is for).</li>
+        </ol>
+        <p class="muted">Until then, use the statement import on the right. It does the same matching.</p>`;
+      return;
+    }
+    el.innerHTML = `<div class="card-head"><h2>Connected banks <span class="pill">${esc(p.env)}</span></h2><div><button class="btn btn-sm" id="plaid-sync" ${p.items.length ? '' : 'disabled'}>Sync now</button> <button class="btn btn-sm btn-primary" id="plaid-link">+ Connect a bank</button></div></div>
+      ${p.items.length ? `<ul class="mini-list">${p.items.map(i => `<li><span><b>${esc(i.institution)}</b><br><span class="muted">${(i.accounts || []).map(a => esc(a.name) + ' ••' + esc(a.mask || '')).join(', ')}</span>${i.error ? `<br><span style="color:var(--bad)">${esc(i.error)}</span>` : ''}</span><span style="text-align:right"><span class="muted">${i.lastSync ? 'synced ' + fmtDate(i.lastSync.slice(0, 10)) : 'never synced'}</span><br><button class="btn btn-sm btn-ghost btn-danger" data-unlink="${esc(i.id)}">Remove</button></span></li>`).join('')}</ul>` : '<div class="muted">No bank connected yet. Click + Connect a bank.</div>'}`;
+    $('#plaid-link').addEventListener('click', plaidLink);
+    $('#plaid-sync').addEventListener('click', async () => { $('#plaid-sync').disabled = true; try { const r = await api('/api/plaid/sync', { method: 'POST' }); toast(`Synced: ${r.added} new, ${r.skipped} already known`); bankData = r.bank; renderBankPlaid(); renderBankTable(); } catch (e) { toast(e.message); $('#plaid-sync').disabled = false; } });
+    $$('[data-unlink]', el).forEach(b => b.addEventListener('click', async () => { if (!confirm('Remove this bank connection? Imported transactions stay.')) return; const r = await api('/api/plaid/items/' + b.dataset.unlink, { method: 'DELETE' }); bankData = r.bank; renderBankPlaid(); }));
+  }
+  function plaidLink() {
+    const go = async () => {
+      try {
+        const { link_token } = await api('/api/plaid/link-token', { method: 'POST' });
+        const handler = window.Plaid.create({ token: link_token, onSuccess: async (public_token, meta) => {
+          try { const r = await api('/api/plaid/exchange', { method: 'POST', body: JSON.stringify({ public_token, institution: meta.institution && meta.institution.name }) }); bankData = r.bank; renderBankPlaid(); toast('Bank connected — syncing…'); $('#plaid-sync').click(); } catch (e) { toast(e.message); }
+        }, onExit: (err) => { if (err) toast(err.display_message || err.error_message || 'Plaid closed'); } });
+        handler.open();
+      } catch (e) { toast(e.message); }
+    };
+    if (window.Plaid) return go();
+    const s = document.createElement('script'); s.src = 'https://cdn.plaid.com/link/v2/stable/link-initialize.js'; s.onload = go; s.onerror = () => toast('Could not load Plaid'); document.head.appendChild(s);
+  }
+  function renderBankCsv() {
+    $('#bank-csv').innerHTML = `<div class="card-head"><h2>Import a bank statement (CSV)</h2></div>
+      <p class="muted">Download transactions from your bank's website as CSV and drop the file here. Columns for date, description and amount are detected automatically; deposits should be positive numbers (or in a Credit column).</p>
+      <input type="file" id="csv-file" accept=".csv,text/csv,.txt">
+      <div id="csv-preview" style="margin-top:10px"></div>`;
+    $('#csv-file').addEventListener('change', async e => {
+      const f = e.target.files[0]; if (!f) return;
+      const text = await f.text(); const rows = parseBankCsv(text);
+      const el = $('#csv-preview');
+      if (!rows.length) { el.innerHTML = '<div style="color:var(--bad)">Could not find date / description / amount columns in that file.</div>'; return; }
+      const dep = rows.filter(r => r.amount > 0).length;
+      el.innerHTML = `<div><b>${rows.length}</b> rows found, <b>${dep}</b> deposits. First rows:</div>
+        <div class="table-scroll"><table class="data"><thead><tr><th>Date</th><th>Description</th><th class="num">Amount</th></tr></thead><tbody>${rows.slice(0, 5).map(r => `<tr><td>${esc(r.date)}</td><td>${esc(r.description)}</td><td class="num">${money2(r.amount)}</td></tr>`).join('')}</tbody></table></div>
+        <div style="margin-top:8px"><button class="btn btn-primary" id="csv-go">Import ${rows.length} rows</button> <span class="muted">Rows already imported are skipped.</span></div>`;
+      $('#csv-go').addEventListener('click', async () => {
+        try { const r = await api('/api/bank/import', { method: 'POST', body: JSON.stringify({ rows }) }); toast(`Imported ${r.added} new (${r.skipped} already known${r.invalid ? ', ' + r.invalid + ' unreadable' : ''})`); bankData = r.bank; el.innerHTML = ''; e.target.value = ''; renderBankTable(); }
+        catch (err) { toast(err.message); }
+      });
+    });
+  }
+  // CSV parser that copes with quoted fields and the usual bank column names.
+  function parseBankCsv(text) {
+    const lines = [];
+    let row = [], field = '', q = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (q) { if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else q = false; } else field += c; }
+      else if (c === '"') q = true;
+      else if (c === ',') { row.push(field); field = ''; }
+      else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(field); if (row.some(x => x.trim())) lines.push(row); row = []; field = ''; }
+      else field += c;
+    }
+    if (field || row.length) { row.push(field); if (row.some(x => x.trim())) lines.push(row); }
+    if (!lines.length) return [];
+    const hdr = lines[0].map(h => h.trim().toLowerCase());
+    const find = re => hdr.findIndex(h => re.test(h));
+    let iDate = find(/^(posted |transaction |trans |post )?date$|date/), iDesc = find(/description|memo|payee|narrative|details|name|transaction$/), iAmt = find(/^amount$|amount/), iCr = find(/credit|deposit/), iDb = find(/debit|withdraw/), iAcct = find(/account/);
+    const looksHeader = iDate >= 0 && (iAmt >= 0 || iCr >= 0 || iDb >= 0);
+    let body = lines;
+    if (looksHeader) body = lines.slice(1); else { iDate = 0; iDesc = 1; iAmt = 2; iCr = iDb = iAcct = -1; }
+    if (iDesc < 0) iDesc = hdr.findIndex((h, i) => i !== iDate && i !== iAmt && i !== iCr && i !== iDb);
+    const out = [];
+    for (const r of body) {
+      let amount = NaN;
+      if (iAmt >= 0 && r[iAmt] !== undefined && r[iAmt].trim() !== '') amount = toNum(r[iAmt]);
+      if (isNaN(amount) && (iCr >= 0 || iDb >= 0)) { const cr = iCr >= 0 ? toNum(r[iCr]) : NaN, db = iDb >= 0 ? toNum(r[iDb]) : NaN; amount = !isNaN(cr) && cr !== 0 ? Math.abs(cr) : !isNaN(db) ? -Math.abs(db) : NaN; }
+      if (!isNaN(amount) && iAmt >= 0 && iDb >= 0 && iDb === iAmt) amount = -Math.abs(amount);
+      out.push({ date: (r[iDate] || '').trim(), description: (r[iDesc] || '').trim(), amount, account: iAcct >= 0 ? (r[iAcct] || '').trim() : '' });
+    }
+    return out.filter(r => r.date && r.description && !isNaN(r.amount));
+  }
+  function toNum(s) { if (s == null) return NaN; s = String(s).trim().replace(/[$,\s]/g, ''); let neg = false; if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); } const n = parseFloat(s); return isNaN(n) ? NaN : (neg ? -n : n); }
+
+  function renderBankTable() {
+    const f = ui.bankFilter, el = $('#bank-table');
+    $('#bank-filter').value = f;
+    const all = bankData.transactions;
+    const list = all.filter(t => f === 'all' ? true : f === 'ledgered' ? !!t.paymentId : f === 'unmatched' ? (t.amount > 0 && !t.carrier && !t.paymentId && !t.ignored) : (t.amount > 0 && t.carrier && !t.paymentId && !t.ignored));
+    const matched = all.filter(t => t.amount > 0 && t.carrier && !t.paymentId && !t.ignored);
+    $('#bank-add-all').disabled = !matched.length; $('#bank-add-all').textContent = `Add ${matched.length} matched deposit${matched.length === 1 ? '' : 's'} to ledger (${money(matched.reduce((s, t) => s + t.amount, 0))})`;
+    if (!all.length) { el.innerHTML = '<div class="empty">Nothing imported yet. Connect a bank or import a CSV statement above.</div>'; return; }
+    if (!list.length) { el.innerHTML = '<div class="empty">Nothing in this view.</div>'; return; }
+    el.innerHTML = `<div class="table-scroll"><table class="data"><thead><tr><th>Date</th><th>Description</th><th>Account</th><th class="num">Amount</th><th>Carrier</th><th></th></tr></thead><tbody>${list.map(t => `<tr data-id="${esc(t.id)}" style="cursor:default">
+      <td>${fmtDate(t.date)}</td><td>${esc(t.description)}<br><span class="muted">${esc(t.source)}${t.ignored ? ' · ignored' : ''}</span></td><td>${esc(t.account || '')}</td><td class="num" style="color:${t.amount < 0 ? 'var(--bad)' : 'inherit'}">${money2(t.amount)}</td>
+      <td>${t.paymentId ? pill(t.carrier || 'Other') : `<select data-carrier>${opts(CARRIERS, t.carrier, '— no match —')}</select>${t.auto ? '<br><span class="muted">auto-matched</span>' : ''}`}</td>
+      <td style="white-space:nowrap">${t.paymentId ? '<span class="pill s-paid">in ledger</span>' : `<button class="btn btn-sm btn-primary" data-ledger ${t.carrier ? '' : 'disabled title="Pick a carrier first"'}>Add to ledger</button> <button class="btn btn-sm btn-ghost" data-ignore>${t.ignored ? 'Unignore' : 'Ignore'}</button>`}</td></tr>`).join('')}</tbody></table></div>`;
+    $$('tr[data-id]', el).forEach(tr => {
+      const id = tr.dataset.id;
+      const sel = $('[data-carrier]', tr); if (sel) sel.addEventListener('change', async () => { const r = await api('/api/bank/transactions/' + id, { method: 'POST', body: JSON.stringify({ carrier: sel.value }) }); Object.assign(bankData.transactions.find(t => t.id === id), r.transaction); renderBankTable(); });
+      const lg = $('[data-ledger]', tr); if (lg) lg.addEventListener('click', () => addToLedger([id]));
+      const ig = $('[data-ignore]', tr); if (ig) ig.addEventListener('click', async () => { const t = bankData.transactions.find(x => x.id === id); const r = await api('/api/bank/transactions/' + id, { method: 'POST', body: JSON.stringify({ ignored: !t.ignored }) }); Object.assign(t, r.transaction); renderBankTable(); });
+    });
+  }
+  async function addToLedger(ids) {
+    try {
+      const r = await api('/api/bank/ledger', { method: 'POST', body: JSON.stringify({ ids }) });
+      db = merge(r.data); bankData = r.bank; renderBankTable(); toast(`Added ${r.added} payment${r.added === 1 ? '' : 's'} to the Money ledger`);
+    } catch (e) { toast(e.message); }
+  }
+  $('#bank-filter').addEventListener('change', e => { ui.bankFilter = e.target.value; renderBankTable(); });
+  $('#bank-add-all').addEventListener('click', () => addToLedger(bankData.transactions.filter(t => t.amount > 0 && t.carrier && !t.paymentId && !t.ignored).map(t => t.id)));
+  function renderBankRules() {
+    const el = $('#bank-rules');
+    const rows = bankData.rules.map((r, i) => `<tr><td><input data-pat value="${esc(r.pattern)}" style="width:100%;font-family:monospace"></td><td><select data-car>${opts(CARRIERS, r.carrier)}</select></td><td><button class="btn btn-sm btn-ghost btn-danger" data-rm="${i}">✕</button></td></tr>`).join('');
+    el.innerHTML = `<div class="table-scroll"><table class="data" id="rules-table"><thead><tr><th>Pattern (matches bank description)</th><th>Carrier</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div style="display:flex;gap:8px;margin-top:10px"><button class="btn" id="rule-add">+ Rule</button><button class="btn btn-primary" id="rule-save">Save rules & re-match</button></div>`;
+    $$('[data-rm]', el).forEach(b => b.addEventListener('click', () => { bankData.rules.splice(+b.dataset.rm, 1); renderBankRules(); }));
+    $('#rule-add').addEventListener('click', () => { bankData.rules.push({ pattern: '', carrier: 'Other' }); renderBankRules(); });
+    $('#rule-save').addEventListener('click', async () => {
+      const rules = $$('#rules-table tbody tr').map(tr => ({ pattern: $('[data-pat]', tr).value.trim(), carrier: $('[data-car]', tr).value })).filter(r => r.pattern);
+      try { const r = await api('/api/bank/rules', { method: 'PUT', body: JSON.stringify({ rules }) }); bankData = r.bank; toast(`Rules saved, ${r.rematched} transaction${r.rematched === 1 ? '' : 's'} re-matched`); renderBankRules(); renderBankTable(); } catch (e) { toast(e.message); }
+    });
+  }
 })();
