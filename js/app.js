@@ -87,7 +87,8 @@
 
   // ---------- state ----------
   let db = defaults();
-  let remote = false, me = null, saveTimer = null;   // remote = served by server/index.js with a login
+  let remote = false, me = null, saveTimer = null;   // remote = served by server.py with a login
+  let cloud = null, cloudSample = null;               // cloud = hosted on claude.ai, data in the artifact database
   let ui = { clientSel: null, moneyYear: new Date().getFullYear(), bankFilter: 'deposits', quote: { conditions: [] } };
 
   function defaults() {
@@ -109,6 +110,7 @@
     return j;
   }
   function save() {
+    if (cloud) { clearTimeout(saveTimer); saveTimer = setTimeout(cloudSync, 500); return; }
     if (!remote) { try { localStorage.setItem(STORE_KEY, JSON.stringify(db)); } catch (e) { toast('Could not save (storage blocked?)'); } return; }
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => api('/api/data', { method: 'PUT', body: JSON.stringify(db) }).catch(e => toast('Save failed: ' + e.message)), 300);
@@ -136,6 +138,68 @@
   function expectedAdvance(p) { return expectedTotal(p) * (Number(p.advance) || 0) / 100; }
   function receivedFor(policyId) { return db.payments.filter(x => x.policyId === policyId).reduce((s, x) => s + Number(x.amount || 0), 0); }
   function monthKey(s) { return (s || '').slice(0, 7); }
+
+  // ---------- cloud storage (claude.ai artifact database) ----------
+  // When the app is published as a claude.ai artifact, window.claude.use('db') gives a document store behind the
+  // viewer's Claude sign-in. Each client / policy / payment is one document; settings + activity share one.
+  const CLOUD_COLLECTIONS = ['clients', 'policies', 'payments'];
+  const synced = {};                    // collection -> { id -> JSON } of what the store holds, for diffing
+  let cloudBusy = false, cloudAgain = false, cloudLoadedAt = 0;
+  async function cloudInit() {
+    if (!(window.claude && typeof window.claude.use === 'function')) return false;
+    const d = await window.claude.use('db'); if (!d) return false;
+    cloud = d; cloudSample = await window.claude.use('sample');
+    return true;
+  }
+  async function cloudLoad() {
+    const out = defaults();
+    for (const col of CLOUD_COLLECTIONS) {
+      const snap = await cloud.collection(col).limit(1000).get();
+      out[col] = snap.docs.filter(x => x.exists).map(x => Object.assign({}, x.data()));
+      synced[col] = Object.fromEntries(out[col].map(x => [x.id, JSON.stringify(x)]));
+    }
+    const meta = await cloud.doc('meta/main').get();
+    if (meta.exists) { const m = meta.data(); out.settings = Object.assign(defaults().settings, m.settings || {}); out.activity = Array.isArray(m.activity) ? m.activity : []; }
+    synced.meta = JSON.stringify({ settings: out.settings, activity: out.activity });
+    cloudLoadedAt = Date.now();
+    return merge(out);
+  }
+  async function runLimited(ops, n) { let i = 0; const workers = Array.from({ length: Math.min(n, ops.length) }, async () => { while (i < ops.length) await ops[i++](); }); await Promise.all(workers); }
+  async function cloudSync() {
+    if (cloudBusy) { cloudAgain = true; return; }
+    cloudBusy = true; $('#cloud-status').textContent = 'Saving…';
+    try {
+      for (const col of CLOUD_COLLECTIONS) {
+        const prev = synced[col] || {}, next = {}, ops = [];
+        db[col].forEach(x => { if (!x.id) x.id = uid(); const j = JSON.stringify(x); next[x.id] = j; if (prev[x.id] !== j) ops.push(() => cloud.doc(col + '/' + x.id).set(JSON.parse(j))); });
+        Object.keys(prev).forEach(id => { if (!next[id]) ops.push(() => cloud.doc(col + '/' + id).delete()); });
+        await runLimited(ops, 4); synced[col] = next;
+      }
+      const body = { settings: db.settings, activity: db.activity.slice(0, 200) }, mj = JSON.stringify(body);
+      if (synced.meta !== mj) { await cloud.doc('meta/main').set(JSON.parse(mj)); synced.meta = mj; }
+      $('#cloud-status').textContent = 'Saved to your Claude account';
+    } catch (e) {
+      const code = e && e.code; $('#cloud-status').textContent = 'Save failed';
+      toast(code === 'quota_exceeded' ? 'Storage is full: delete some old clients or policies' : code === 'invalid_argument' ? 'This Claude account can view the CRM but not change it' : 'Cloud save failed: ' + ((e && (e.message || e.code)) || e));
+    }
+    cloudBusy = false; if (cloudAgain) { cloudAgain = false; cloudSync(); }
+  }
+  async function cloudRefresh() {
+    // Pick up changes made on another device when this tab comes back to the front.
+    if (!cloud || cloudBusy || saveTimer || !$('#modal').hidden || Date.now() - cloudLoadedAt < 15000) return;
+    try { db = await cloudLoad(); applyTheme(); renderAll(); } catch (e) { /* keep what we have */ }
+  }
+  const AI_PROMPT = `You help a licensed life insurance agent work their lead list. For each lead, decide what kind of lead it is and write the email the agent should send next.
+Lead types: finalexpense (60+ or health/build issues, or asks about burial/funeral; fit: whole life / final expense), term (younger or middle-aged, protecting mortgage, income or family), iul (wants cash value, retirement or tax-advantaged savings), quoted (already has a quote, has not decided; move them to a decision), general (not enough information; ask one or two simple questions).
+Temperature: Hot = quoted, referral, follow-up due, or asked to be contacted. Warm = recent lead with some interest. Cold = old lead, no engagement.
+Email rules: plain text, 90 to 150 words, warm and plain-spoken, no hype, no medical advice, no guarantees about approval or price, never mention a specific premium unless it is in the lead's notes. Mention one concrete detail from their notes when there is one. Close with one clear next step. Write {first}, {agent} and {phone} literally as placeholders; do not fill them in. No subject line inside the body. agentTemplates are the agent's own starting points per type: keep their tone and offer but personalise each email.
+Return ONLY a JSON object: {"leads":[{"id":"...","type":"finalexpense|term|iul|quoted|general","temperature":"Hot|Warm|Cold","summary":"one line","subject":"...","body":"..."}]} with one entry per lead, same ids, same order.`;
+  async function cloudAnalyze(leads, templates) {
+    const input = AI_PROMPT + '\n\nAgent: ' + JSON.stringify({ name: db.settings.agentName || 'the agent', phone: db.settings.agentPhone || '' }) + '\nToday: ' + today() + '\nagentTemplates: ' + JSON.stringify(templates) + '\nLeads: ' + JSON.stringify(leads);
+    const out = await cloudSample.json(input, { modelTier: 'default', cache: false });
+    const results = (out && Array.isArray(out.leads) ? out.leads : []).filter(x => x && x.id);
+    return { results, model: 'Claude' };
+  }
 
   // ---------- commission math ----------
   // One place that answers: what should this policy have paid me by today, and what did it pay?
@@ -236,7 +300,7 @@
       return true;
     }).sort((a, b) => ({ Hot: 0, Warm: 1, Cold: 2 }[leadType(a).temp] - { Hot: 0, Warm: 1, Cold: 2 }[leadType(b).temp]) || clientName(a).localeCompare(clientName(b)));
     visible().filter(emailable).forEach(c => checked.add(c.id));
-    const canSend = remote && me && me.email, canAi = remote && me && me.ai;
+    const canSend = remote && me && me.email, canAi = !!(me && me.ai);
     openModal(onlyIds && onlyIds.length === 1 ? `Email ${clientName(clientById(onlyIds[0]))}` : 'Email leads', `
       <div class="email-tools">
         ${onlyIds ? '' : `<label>Show <select id="em-status"><option value="leads">Leads &amp; Quoted</option><option value="Lead">Leads only</option><option value="Quoted">Quoted only</option><option value="">Everyone</option></select></label>
@@ -247,7 +311,7 @@
       </div>
       <div class="table-scroll email-table"><table class="data"><thead><tr><th><input type="checkbox" id="em-all" checked></th><th>Lead</th><th>Type</th><th>Heat</th><th class="why">Why</th></tr></thead><tbody id="em-rows"></tbody></table></div>
       <div id="em-preview" class="email-preview"></div>
-      ${canSend ? '' : `<div class="email-note">${remote ? 'Sending from the app is not set up yet: add <code>SMTP_HOST</code>, <code>SMTP_USER</code>, <code>SMTP_PASS</code> and <code>SMTP_FROM</code> to <code>.env</code> and restart (see README). Until then, use <b>Open in mail app</b> on each lead, or copy the addresses.' : 'The quick (no-login) version cannot send email itself. Use <b>Open in mail app</b> on each lead, or run the portal server with SMTP settings to send to everyone in one click.'}</div>`}
+      ${canSend ? '' : `<div class="email-note">${remote ? 'Sending from the app is not set up yet: add <code>SMTP_HOST</code>, <code>SMTP_USER</code>, <code>SMTP_PASS</code> and <code>SMTP_FROM</code> to <code>.env</code> and restart (see README). Until then, use <b>Open in mail app</b> on each lead, or copy the addresses.' : cloud ? 'This hosted version cannot send email by itself. Use <b>Open in mail app</b> on each lead (the message is filled in for you), or copy the addresses. One-click sending to everyone needs the self-hosted server with SMTP settings (see README).' : 'The quick (no-login) version cannot send email itself. Use <b>Open in mail app</b> on each lead, or run the portal server with SMTP settings to send to everyone in one click.'}</div>`}
       <div class="form-actions">
         <label class="muted" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="em-followup" checked> set a follow-up 3 days out for everyone emailed</label>
         <div class="right">
@@ -312,7 +376,7 @@
           const payload = list.map(c => { const t = leadType(c); return { id: c.id, first: c.first, age: ageFromDob(c.dob), state: c.state, tobacco: c.tobacco, heightIn: c.height, weightLb: c.weight, health: c.health, notes: c.notes, source: c.source, status: c.status, followUp: c.followUp, createdAt: c.createdAt,
             policies: db.policies.filter(p => p.clientId === c.id).map(p => `${p.carrier} ${p.productType} ${money(p.face)} ${p.status}`), ruleType: t.ruleKey, ruleTemperature: t.ruleTemp }; });
           const templates = {}; Object.keys(LEAD_TYPES).forEach(k => templates[k] = tpl(k));
-          const r = await api('/api/leads/analyze', { method: 'POST', body: JSON.stringify({ leads: payload, agent: db.settings.agentName, phone: db.settings.agentPhone, templates }) });
+          const r = cloud ? await cloudAnalyze(payload, templates) : await api('/api/leads/analyze', { method: 'POST', body: JSON.stringify({ leads: payload, agent: db.settings.agentName, phone: db.settings.agentPhone, templates }) });
           r.results.forEach(x => { aiDrafts[x.id] = x; const c = clientById(x.id); if (c) { c.leadSummary = x.summary; delete overrides[x.id]; } });
           save(); toast(`Analyzed ${r.results.length} leads with ${r.model}`);
         } catch (e) { toast(e.message); }
@@ -561,7 +625,7 @@
         <div class="field"><label>Your name (emails are signed with it)</label><input name="agentName" value="${esc(s.agentName)}"></div>
         <div class="field"><label>Your phone (goes under your name in emails)</label><input name="agentPhone" value="${esc(s.agentPhone)}" type="tel"></div>
         <div class="field full" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button type="button" class="btn btn-sm" data-action="email-templates">Edit email templates</button>
-          <span class="muted">${remote ? `Sending: ${me.email ? 'ready (SMTP)' : 'not set up, add SMTP_* to .env'} · AI lead analysis: ${me.ai ? 'ready (' + esc(me.aiModel) + ')' : 'not set up, add ANTHROPIC_API_KEY to .env'}` : 'Run the portal server to send email from the app.'}</span></div>
+          <span class="muted">${remote ? `Sending: ${me.email ? 'ready (SMTP)' : 'not set up, add SMTP_* to .env'} · AI lead analysis: ${me.ai ? 'ready (' + esc(me.aiModel) + ')' : 'not set up, add ANTHROPIC_API_KEY to .env'}` : cloud ? `Saved to your Claude account. AI lead analysis: ${me.ai ? 'ready (Claude)' : 'not available in this view'} · Email: Open in mail app per lead (one-click sending needs the self-hosted server).` : 'Run the portal server to send email from the app.'}</span></div>
         <div class="field"><label>Default commission % — Term Life</label><input name="r_term" type="number" step="0.5" value="${esc(s.rates['Term Life'])}"></div>
         <div class="field"><label>Default commission % — IUL</label><input name="r_iul" type="number" step="0.5" value="${esc(s.rates['IUL'])}"></div>
         <div class="field"><label>Default commission % — Whole Life</label><input name="r_whole" type="number" step="0.5" value="${esc(s.rates['Whole Life'])}"></div>
@@ -572,7 +636,7 @@
         ${remote ? `<div class="full" style="border-top:1px solid var(--border);padding-top:10px"><b>Change password</b> (signed in as ${esc(me.username)})</div>
         <div class="field"><label>Current password</label><input name="pw_cur" type="password" autocomplete="current-password"></div>
         <div class="field"><label>New password (10+ characters)</label><input name="pw_new" type="password" autocomplete="new-password"></div>` : ''}
-        <div class="form-actions full"><div class="muted">Data is stored only in this browser. Use Backup regularly.</div><div class="right"><button type="button" class="btn" data-cancel>Cancel</button><button class="btn btn-primary">Save</button></div></div>
+        <div class="form-actions full"><div class="muted">${cloud ? 'Data is saved to your Claude account and shared across your devices.' : remote ? 'Data is saved on your server.' : 'Data is stored only in this browser. Use Backup regularly.'}</div><div class="right"><button type="button" class="btn" data-cancel>Cancel</button><button class="btn btn-primary">Save</button></div></div>
       </form>`, body => {
       const form = $('#settings-form');
       form.addEventListener('submit', async e => {
@@ -1049,8 +1113,17 @@
       if (r.status === 401) { location.href = '/login'; return; }
       if (r.ok) { me = await r.json(); if (me.server) { remote = true; db = merge(await (await fetch('/api/data', { credentials: 'same-origin' })).json()); } }
     } catch (e) { /* opened as a plain file or static site: local mode */ }
-    if (!remote) db = loadLocal();
-    $('#tab-bank').hidden = !remote; $('#btn-logout').hidden = !remote;
+    if (!remote) {
+      let ok = false;
+      try { ok = await cloudInit(); } catch (e) { ok = false; }
+      if (ok) {
+        try { db = await cloudLoad(); me = { cloud: true, email: false, ai: !!cloudSample }; $('#cloud-status').textContent = 'Saved to your Claude account'; }
+        catch (e) { cloud = null; toast('Could not load your data from Claude: ' + ((e && (e.message || e.code)) || e)); }
+      }
+    }
+    if (!remote && !cloud) db = loadLocal();
+    $('#tab-bank').hidden = !remote; $('#btn-logout').hidden = !remote; $('#cloud-status').hidden = !cloud;
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') cloudRefresh(); });
     applyTheme();
     const start = (location.hash || '#dashboard').slice(1);
     showTab(['dashboard', 'clients', 'policies', 'money', 'commissions', 'bank', 'quoter'].includes(start) ? start : 'dashboard');

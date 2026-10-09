@@ -4,14 +4,16 @@ A CRM for a life insurance agent: clients, policies, commission money, a **Commi
 matches carrier deposits to your ledger, an **Email leads** screen, and a **Quoter** that reads the 2026 carrier
 underwriting guides (Term Life, IUL, Whole Life / Final Expense) and lists the carriers most likely to approve a client.
 
-It runs two ways:
+It runs three ways:
 
-| | Quick (no login) | Portal (login + bank) |
-|---|---|---|
-| How | open `index.html` in a browser | run `server.py` with Python |
-| Data lives | in that browser only | on the server, behind your login |
-| Bank tab | no | yes |
-| Good for | trying it out, one computer | daily use, phone + laptop, shared computers |
+| | Quick (no login) | Hosted on claude.ai | Portal (your own server) |
+|---|---|---|---|
+| How | open `index.html` in a browser | publish the app as a claude.ai artifact (see below) | run `server.py` with Python, or the Dockerfile |
+| Login | none | your Claude account | username + password you create |
+| Data lives | in that browser only | in the artifact's database, synced across your devices | on the server |
+| Email leads | Open in mail app | Open in mail app · AI drafts via Claude | one-click SMTP sending · AI via API key |
+| Bank tab | no | no | yes |
+| Good for | trying it out | phone + laptop with nothing to run | full feature set, email sending |
 
 ## Portal: run the server
 
@@ -28,6 +30,17 @@ Everything is stored as JSON files in `data/` next to `server.py` (set `DATA_DIR
 folder up, or use the Backup button in the app. `python test_server.py` runs a quick self-test.
 
 To use it from your phone or outside your house, put it online: see **Put it online** below.
+
+## Hosted on claude.ai (nothing to run)
+
+Publish `index.html` with `css/app.css`, `js/app.js`, `js/guides-data.js`, `manifest.webmanifest` and `icon.svg` as a
+claude.ai artifact declaring the `db` and `sample` capabilities (Claude Code does this with its Artifact tool). The app
+notices `window.claude` and switches to cloud mode: every client, policy and payment becomes a document in the
+artifact's database (`clients/<id>`, `policies/<id>`, `payments/<id>`; settings and activity in `meta/main`), only
+changed documents are written, and the page re-reads the store when you come back to it on another device. Only the
+artifact's owner (and people they share it with as editors) can write. **Analyze with AI** on the Email leads screen
+runs through the viewer's Claude, so no API key is needed; one-click email sending is not available in this mode (use
+Open in mail app). Add the artifact link to your phone's home screen the same way as below.
 
 ## Put it online (phone access)
 

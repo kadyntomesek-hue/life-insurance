@@ -327,3 +327,5 @@ details.section[open] > summary::before { content: "▾ "; }
 .chip.soft { background: var(--surface-2); color: var(--text-2); font-weight: 500; }
 .chip .via { font-weight: 400; opacity: .75; font-size: 12px; }
 #q-health { min-height: 54px; }
+.cloud-status { align-self: center; white-space: nowrap; }
+@media (max-width: 640px) { .cloud-status { display: none; } }
