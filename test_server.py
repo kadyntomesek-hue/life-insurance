@@ -94,6 +94,79 @@ s, j, _, _ = call('POST', '/api/bank/ledger', {'ids': ids}); check(j['added'] ==
 s, d, _, _ = call('GET', '/api/data'); check(len(d['payments']) == 3, 'payments in crm data')
 s, j, _, _ = call('POST', '/api/plaid/link-token'); check(s == 400 and 'not configured' in j['error'], 'plaid unconfigured message')
 
+# ---- email + lead analysis ----
+s, j, _, _ = call('GET', '/api/me'); check(j['email'] is False and j['ai'] is False, 'email/ai off by default')
+s, j, _, _ = call('POST', '/api/email/send', {'recipients': [{'id': 'c1', 'email': 'a@b.co'}], 'subject': 'x', 'body': 'y'}); check(s == 400 and 'not set up' in j['error'], 'smtp unconfigured message')
+s, j, _, _ = call('POST', '/api/leads/analyze', {'leads': [{'id': 'c1'}]}); check(s == 400 and 'ANTHROPIC_API_KEY' in j['error'], 'ai unconfigured message')
+check(server.fill_template('Hi {first} {Name}, - {agent} {phone}', server.recipient_fields({'first': 'Jane', 'last': 'Doe'}, 'Kadyn', '555')) == 'Hi Jane Jane Doe, - Kadyn 555', 'template fill')
+check(server.fill_template('Hi {first}', server.recipient_fields({}, 'K', '')) == 'Hi there', 'template fallback name')
+
+sent = []
+
+
+class FakeSMTP:
+    def __init__(self, host, port, timeout=None):
+        sent.append(('connect', host, port))
+    def starttls(self): sent.append(('starttls',))
+    def login(self, u, p): sent.append(('login', u, p))
+    def send_message(self, msg):
+        if msg['To'].endswith('refuse.me>') or msg['To'].endswith('refuse.me'):
+            raise server.smtplib.SMTPRecipientsRefused({})
+        sent.append(('send', msg['To'], msg['Subject'], msg.get_content()))
+    def quit(self): sent.append(('quit',))
+
+
+os.environ.update({'SMTP_HOST': 'smtp.test', 'SMTP_PORT': '587', 'SMTP_USER': 'me@test.com', 'SMTP_PASS': 'pw', 'SMTP_FROM': 'me@test.com', 'SMTP_FROM_NAME': 'Kadyn'})
+real_smtp = server.smtplib.SMTP
+server.smtplib.SMTP = FakeSMTP
+try:
+    s, j, _, _ = call('GET', '/api/me'); check(j['email'] is True, 'email on when configured')
+    s, j, _, _ = call('POST', '/api/email/send', {'recipients': [], 'subject': 'x', 'body': 'y'}); check(s == 400, 'needs recipients')
+    s, j, _, _ = call('POST', '/api/email/send', {'recipients': [{'id': 'c1', 'email': 'a@b.co'}], 'subject': '', 'body': 'y'}); check(s == 400, 'needs subject')
+    s, j, _, _ = call('POST', '/api/email/send', {'agent': 'Kadyn', 'phone': '555-1234', 'subject': 'Hi {first}', 'body': 'Dear {name},\n{agent}\n{phone}', 'recipients': [
+        {'id': 'c1', 'email': 'jane@example.com', 'first': 'Jane', 'last': 'Doe'},
+        {'id': 'c2', 'email': 'bob@example.com', 'first': 'Bob', 'subject': 'Own subject {first}', 'body': 'Own body for {first}'},
+        {'id': 'c3', 'email': 'not-an-email'},
+        {'id': 'c4', 'email': 'x@refuse.me', 'first': 'X'}]})
+    check(s == 200 and j['sent'] == 2 and j['failed'] == 2, 'send counts %r' % j)
+    res = {r['id']: r for r in j['results']}
+    check(res['c3']['error'] == 'Invalid email address' and 'refused' in res['c4']['error'], 'per-recipient errors')
+    sends = [x for x in sent if x[0] == 'send']
+    check(sends[0][1] == 'Jane Doe <jane@example.com>' and sends[0][2] == 'Hi Jane' and sends[0][3].strip() == 'Dear Jane Doe,\nKadyn\n555-1234', 'personalised message %r' % (sends[0],))
+    check(sends[1][2] == 'Own subject Bob' and sends[1][3].strip() == 'Own body for Bob', 'per-recipient subject/body')
+    check(sent.count(('connect', 'smtp.test', 587)) == 1 and ('starttls',) in sent and ('login', 'me@test.com', 'pw') in sent and ('quit',) in sent, 'one connection, starttls, login, quit')
+    s, j, _, _ = call('POST', '/api/email/test', {}); check(s == 200 and j['to'] == 'me@test.com', 'test email to self')
+finally:
+    server.smtplib.SMTP = real_smtp
+
+# AI analysis with a fake Claude API
+captured = []
+
+
+def fake_ai_messages(payload):
+    captured.append(payload)
+    leads = json.loads(payload['messages'][0]['content'].split('\n\n', 1)[1])['leads']
+    return {'model': payload['model'], 'stop_reason': 'end_turn', 'content': [{'type': 'text', 'text': json.dumps({'leads': [
+        {'id': l['id'], 'type': 'finalexpense' if (l.get('age') or 0) >= 60 else 'term', 'temperature': 'Hot', 'summary': 'sum ' + l['id'], 'subject': 'S {first}', 'body': 'B {first} {agent} {phone}'} for l in leads]})}]}
+
+
+os.environ['ANTHROPIC_API_KEY'] = 'sk-test'
+real_ai = server.ai_messages
+server.ai_messages = fake_ai_messages
+try:
+    s, j, _, _ = call('GET', '/api/me'); check(j['ai'] is True and j['aiModel'] == 'claude-opus-5-5', 'ai on when configured')
+    leads = [{'id': 'c%d' % i, 'first': 'P%d' % i, 'age': 70 if i % 2 else 35, 'notes': 'n', 'health': ''} for i in range(15)]
+    s, j, _, _ = call('POST', '/api/leads/analyze', {'leads': leads, 'agent': 'Kadyn', 'phone': '555', 'templates': {'term': {'subject': 'a', 'body': 'b'}}})
+    check(s == 200 and len(j['results']) == 15 and j['model'] == 'claude-opus-5-5', 'analyze result %r' % (j if s != 200 else len(j['results'])))
+    check(len(captured) == 2, 'batched into 2 requests, got %d' % len(captured))
+    check(captured[0]['output_config']['format']['type'] == 'json_schema' and captured[0]['fallbacks'] == 'default' and 'thinking' not in captured[0], 'request shape')
+    check(j['results'][1]['type'] == 'finalexpense' and j['results'][0]['type'] == 'term' and j['results'][0]['id'] == 'c0', 'results aligned by id')
+    server.ai_messages = lambda payload: {'stop_reason': 'refusal', 'stop_details': {'explanation': 'nope'}, 'content': []}
+    s, j, _, _ = call('POST', '/api/leads/analyze', {'leads': leads[:1]}); check(s == 502 and 'declined' in j['error'], 'refusal surfaced')
+finally:
+    server.ai_messages = real_ai
+    del os.environ['ANTHROPIC_API_KEY']
+
 s, _, _, _ = call('POST', '/api/auth/password', {'current': 'wrong', 'next': 'another long password'}); check(s == 400, 'wrong current pw')
 s, _, _, _ = call('POST', '/api/auth/password', {'current': 'correct horse battery', 'next': 'another long password'}); check(s == 200, 'password changed')
 call('POST', '/api/auth/logout'); cookie = ''

@@ -243,3 +243,24 @@ details.section[open] > summary::before { content: "▾ "; }
 #bank-plaid code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 #bank-table table.data tbody tr:hover { background: transparent; }
 #rules-table td { padding: 5px 8px; }
+
+/* ---- lead types / email leads ---- */
+.pill.s-finalexpense { background: #f0e9ff; color: #4d2f9c; border-color: #d7c8f7; }
+.pill.s-term { background: #e3efff; color: #1b4f9c; border-color: #bfd6f6; }
+.pill.s-iul { background: #e1f5e4; color: #146c2e; border-color: #b7e3c0; }
+.pill.s-general { background: #eef2f7; color: #4a5565; }
+.pill.s-hot { background: #fde3e3; color: #9c1d1d; border-color: #f4bcbc; }
+.pill.s-warm { background: #fff4d6; color: #7a5200; border-color: #f3dc9a; }
+.pill.s-cold { background: #e7f0fc; color: #2a5a93; border-color: #c3d8f3; }
+.email-tools { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 10px; }
+.email-tools label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-2); }
+.email-tools .grow { flex: 1; }
+.email-table { max-height: 280px; }
+.email-table tr.selected td { background: var(--accent-soft); }
+.email-table td.why { font-size: 12px; color: var(--muted); }
+.email-table tr.noemail td { opacity: .55; }
+.email-preview { margin-top: 12px; border: 1px solid var(--border); border-radius: 10px; padding: 12px; background: var(--surface-2); }
+.email-preview .field + .field { margin-top: 8px; }
+.email-preview textarea { min-height: 170px; font-family: inherit; }
+.email-note { font-size: 12px; color: var(--muted); margin-top: 8px; }
+.ai-summary { font-size: 12px; color: var(--text-2); margin-top: 4px; font-style: italic; }

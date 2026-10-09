@@ -10,6 +10,36 @@
   const PAYMENT_TYPES = ['Commission advance', 'As-earned commission', 'Renewal', 'Bonus', 'Chargeback', 'Other'];
   const LEAD_SOURCES = ['Referral', 'Purchased lead', 'Facebook', 'Door knock', 'Mailer', 'Cold call', 'Walk-in', 'Other'];
   const US_STATES = 'AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY DC'.split(' ');
+  const LEAD_TYPES = {
+    finalexpense: { label: 'Final Expense / Whole Life' },
+    term: { label: 'Term / Family Protection' },
+    iul: { label: 'IUL / Cash Value' },
+    quoted: { label: 'Quoted - needs a decision' },
+    general: { label: 'General inquiry' }
+  };
+  const TEMPLATE_FIELDS = '{first} {last} {name} {agent} {phone}';
+  const DEFAULT_TEMPLATES = {
+    finalexpense: {
+      subject: '{first}, a quick note about final expense coverage',
+      body: 'Hi {first},\n\nThanks for your interest in life insurance. For folks at your stage, the most common goal is making sure funeral costs and any leftover bills never land on family. A small whole life policy does exactly that: the premium never goes up, the coverage never expires, and most people qualify with a few health questions and no exam.\n\nI work with several carriers, so I can match the plan to your health history rather than the other way around.\n\nWould a 10-minute call this week work? Reply with a good time, or call or text me at the number below.\n\n{agent}\n{phone}'
+    },
+    term: {
+      subject: '{first}, protecting your family for less than you might think',
+      body: 'Hi {first},\n\nThanks for reaching out about life insurance. For most families the goal is simple: if something happened to you, the mortgage gets paid and the people who depend on you are taken care of. Term life does that for a fixed monthly cost, often about what a couple of takeout dinners run.\n\nI shop a group of carriers, so I can find the one that treats your health and build the most fairly. Many approve quickly without a medical exam.\n\nCan I run numbers for you? A 10-minute call is all it takes. Reply with a good time, or call or text me at the number below.\n\n{agent}\n{phone}'
+    },
+    iul: {
+      subject: '{first}, life insurance that also builds cash value',
+      body: 'Hi {first},\n\nThanks for your interest. Since you are thinking about the long term, an indexed universal life policy may be worth a look: it protects your family today and builds cash value tied to a market index, with a floor so a bad year does not take your balance backwards. That cash value can later be used tax-advantaged for retirement income or big expenses.\n\nIt is not right for everyone, so I would like to show you how the numbers look for your situation specifically.\n\nWould a short call this week work? Reply with a good time, or call or text me at the number below.\n\n{agent}\n{phone}'
+    },
+    quoted: {
+      subject: '{first}, any questions on your quote?',
+      body: 'Hi {first},\n\nI wanted to follow up on the quote I put together for you. Rates are based on your age at application, so locking it in sooner keeps the price where it is.\n\nIf anything about the coverage amount, the carrier or the monthly cost is not quite right, tell me and I will adjust it. If it looks good, the application takes about 15 minutes and I can walk you through it over the phone.\n\nWhat works better for you, a quick call or a few questions by reply?\n\n{agent}\n{phone}'
+    },
+    general: {
+      subject: '{first}, quick follow-up on life insurance',
+      body: 'Hi {first},\n\nThanks for your interest in life insurance. To point you toward the right kind of coverage, I just need a couple of things: roughly what you want the policy to cover (family income, a mortgage, final expenses, or savings), and any health conditions or medications I should plan around.\n\nReply with a line or two, or if it is easier, call or text me at the number below and we can sort it out in 10 minutes.\n\n{agent}\n{phone}'
+    }
+  };
   const CARRIERS = ['Americo', 'Mutual of Omaha', 'Transamerica', 'Fidelity Life', 'Corebridge / AGL', 'Aetna / Accendo', 'Foresters', 'Prosperity', 'American-Amicable', 'Ethos', 'National Life Group', 'Other'];
 
   // Which carrier columns of each guide belong to each product button.
@@ -31,7 +61,7 @@
   function defaults() {
     return {
       clients: [], policies: [], payments: [], activity: [],
-      settings: { agentName: '', rates: { 'Term Life': 80, 'IUL': 90, 'Whole Life': 100 }, advance: 75, theme: 'auto' }
+      settings: { agentName: '', agentPhone: '', rates: { 'Term Life': 80, 'IUL': 90, 'Whole Life': 100 }, advance: 75, theme: 'auto', emailTemplates: {} }
     };
   }
   function merge(d) { return Object.assign(defaults(), d, { settings: Object.assign(defaults().settings, (d && d.settings) || {}) }); }
@@ -74,6 +104,196 @@
   function expectedAdvance(p) { return expectedTotal(p) * (Number(p.advance) || 0) / 100; }
   function receivedFor(policyId) { return db.payments.filter(x => x.policyId === policyId).reduce((s, x) => s + Number(x.amount || 0), 0); }
   function monthKey(s) { return (s || '').slice(0, 7); }
+
+  // ---------- lead analysis ----------
+  // Rule-based: works offline. The optional AI pass (server + ANTHROPIC_API_KEY) refines it and writes a personal draft.
+  const aiDrafts = {};   // clientId -> { type, temperature, summary, subject, body } for this session only
+  function daysSince(s) { if (!s) return null; const d = new Date(s.length === 10 ? s + 'T00:00:00' : s); return isNaN(d) ? null : Math.floor((Date.now() - d) / 86400000); }
+  function bmi(c) { const h = Number(c.height), w = Number(c.weight); return h && w ? Math.round(703 * w / (h * h)) : null; }
+  function leadType(c) {
+    const age = Number(ageFromDob(c.dob)) || null, text = `${c.health || ''} ${c.notes || ''}`.toLowerCase(), why = [], flags = [];
+    const has = re => re.test(text);
+    let key;
+    if (c.status === 'Quoted') { key = 'quoted'; why.push('already quoted'); }
+    else if (has(/final expense|burial|funeral|cremation|casket/)) { key = 'finalexpense'; why.push('asked about final expense / burial'); }
+    else if (has(/retire|cash value|savings|invest|iul|tax[- ]free|college fund|wealth/)) { key = 'iul'; why.push('mentions savings / retirement'); }
+    else if (has(/mortgage|house|home loan|kids|children|baby|newborn|married|wife|husband|family|income replacement|spouse/)) { key = 'term'; why.push('mentions family / mortgage / income'); }
+    else if (age !== null && age >= 60) { key = 'finalexpense'; why.push(`age ${age}`); }
+    else if (age !== null) { key = 'term'; why.push(`age ${age}`); }
+    else if (!text.trim()) { key = 'general'; why.push('no DOB or notes yet'); }
+    else { key = 'term'; why.push('default fit'); }
+    const serious = has(/diabet|insulin|copd|oxygen|heart|stroke|cancer|dialysis|kidney|hepat|hiv|afib|congestive|bipolar|schizo|alzheim|dementia|parkinson/);
+    const b = bmi(c);
+    if (serious) { flags.push('health conditions noted'); if (key === 'term' && age !== null && age >= 50) { key = 'finalexpense'; why.push('health + age favors simplified whole life'); } }
+    if (b && b >= 38) flags.push(`build (BMI ~${b}) may need graded / GI carriers`);
+    if (c.tobacco === 'Yes') flags.push('tobacco rates');
+    // temperature
+    let temp = 'Warm';
+    const dueDays = c.followUp ? daysSince(c.followUp) : null, ageDays = daysSince(c.createdAt);
+    if (c.status === 'Quoted' || (dueDays !== null && dueDays >= 0) || ['Referral', 'Walk-in'].includes(c.source) || has(/call me|asap|urgent|interested|ready/)) { temp = 'Hot'; why.push(c.status === 'Quoted' ? 'waiting on a decision' : dueDays !== null && dueDays >= 0 ? 'follow-up due' : ['Referral', 'Walk-in'].includes(c.source) ? `${c.source.toLowerCase()} lead` : 'asked to be contacted'); }
+    else if (ageDays !== null && ageDays > 30 && !c.followUp) { temp = 'Cold'; why.push(`added ${ageDays} days ago, no follow-up set`); }
+    else if (c.source) why.push(`${c.source.toLowerCase()} lead`);
+    const ai = aiDrafts[c.id];
+    if (ai) return { key: ai.type in LEAD_TYPES ? ai.type : key, label: LEAD_TYPES[ai.type in LEAD_TYPES ? ai.type : key].label, temp: ai.temperature || temp, why, flags, ai, ruleKey: key, ruleTemp: temp };
+    return { key, label: LEAD_TYPES[key].label, temp, why, flags, ruleKey: key, ruleTemp: temp };
+  }
+  function tpl(key) { return Object.assign({}, DEFAULT_TEMPLATES[key] || DEFAULT_TEMPLATES.general, (db.settings.emailTemplates || {})[key] || {}); }
+  function fillTemplate(text, c) {
+    const first = (c.first || '').trim(), last = (c.last || '').trim();
+    const f = { first: first || 'there', last, name: [first, last].filter(Boolean).join(' ') || 'there', agent: db.settings.agentName || '', phone: db.settings.agentPhone || '' };
+    return String(text || '').replace(/\{(first|last|name|agent|phone)\}/gi, (m, k) => f[k.toLowerCase()]);
+  }
+  function draftFor(c, overrides) {
+    const o = (overrides || {})[c.id]; if (o) return o;
+    const a = aiDrafts[c.id]; if (a && a.subject && a.body) return { subject: a.subject, body: a.body };
+    return tpl(leadType(c).key);
+  }
+  function typePill(t) { return `<span class="pill s-${esc(t.key)}">${esc(t.label)}</span>`; }
+  function emailable(c) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test((c.email || '').trim()); }
+
+  // ---------- email leads ----------
+  function openEmailLeads(onlyIds) {
+    const overrides = {}, checked = new Set();
+    let sel = null, statusFilter = onlyIds ? '' : 'leads', dueOnly = false, sending = false;
+    const pool = () => onlyIds ? db.clients.filter(c => onlyIds.includes(c.id)) : db.clients;
+    const visible = () => pool().filter(c => {
+      if (statusFilter === 'leads' && !['Lead', 'Quoted'].includes(c.status)) return false;
+      if (statusFilter && statusFilter !== 'leads' && c.status !== statusFilter) return false;
+      if (dueOnly && !(c.followUp && c.followUp <= today())) return false;
+      return true;
+    }).sort((a, b) => ({ Hot: 0, Warm: 1, Cold: 2 }[leadType(a).temp] - { Hot: 0, Warm: 1, Cold: 2 }[leadType(b).temp]) || clientName(a).localeCompare(clientName(b)));
+    visible().filter(emailable).forEach(c => checked.add(c.id));
+    const canSend = remote && me && me.email, canAi = remote && me && me.ai;
+    openModal(onlyIds && onlyIds.length === 1 ? `Email ${clientName(clientById(onlyIds[0]))}` : 'Email leads', `
+      <div class="email-tools">
+        ${onlyIds ? '' : `<label>Show <select id="em-status"><option value="leads">Leads &amp; Quoted</option><option value="Lead">Leads only</option><option value="Quoted">Quoted only</option><option value="">Everyone</option></select></label>
+        <label><input type="checkbox" id="em-due"> follow-up due only</label>`}
+        <span class="muted grow" id="em-count"></span>
+        ${canAi ? `<button class="btn btn-sm" id="em-ai" title="Have Claude read each lead's notes, confirm the lead type and write a personal draft">&#10024; Analyze with AI</button>` : ''}
+        <button class="btn btn-sm" id="em-templates">Templates</button>
+      </div>
+      <div class="table-scroll email-table"><table class="data"><thead><tr><th><input type="checkbox" id="em-all" checked></th><th>Lead</th><th>Type</th><th>Heat</th><th class="why">Why</th></tr></thead><tbody id="em-rows"></tbody></table></div>
+      <div id="em-preview" class="email-preview"></div>
+      ${canSend ? '' : `<div class="email-note">${remote ? 'Sending from the app is not set up yet: add <code>SMTP_HOST</code>, <code>SMTP_USER</code>, <code>SMTP_PASS</code> and <code>SMTP_FROM</code> to <code>.env</code> and restart (see README). Until then, use <b>Open in mail app</b> on each lead, or copy the addresses.' : 'The quick (no-login) version cannot send email itself. Use <b>Open in mail app</b> on each lead, or run the portal server with SMTP settings to send to everyone in one click.'}</div>`}
+      <div class="form-actions">
+        <label class="muted" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="em-followup" checked> set a follow-up 3 days out for everyone emailed</label>
+        <div class="right">
+          ${canSend ? '' : '<button type="button" class="btn" id="em-copy">Copy addresses</button>'}
+          <button type="button" class="btn" data-cancel>Close</button>
+          ${canSend ? '<button type="button" class="btn btn-primary" id="em-send">Send</button>' : '<button type="button" class="btn btn-primary" id="em-open">Open in mail app</button>'}
+        </div>
+      </div>`, body => {
+      const rowsEl = $('#em-rows'), prev = $('#em-preview');
+      function renderRows() {
+        const list = visible();
+        if (!list.length) { rowsEl.innerHTML = `<tr><td colspan="5" class="empty">No leads match. ${db.clients.length ? 'Change the filter above.' : 'Add a client first.'}</td></tr>`; }
+        else rowsEl.innerHTML = list.map(c => { const t = leadType(c), ok = emailable(c); return `<tr data-id="${c.id}" class="${c.id === sel ? 'selected' : ''} ${ok ? '' : 'noemail'}">
+          <td><input type="checkbox" data-check="${c.id}" ${ok ? '' : 'disabled title="No email address"'} ${checked.has(c.id) ? 'checked' : ''}></td>
+          <td><b>${esc(clientName(c))}</b><br><span class="muted">${ok ? esc(c.email) : 'no email address'}${c.lastEmailed ? ` · emailed ${fmtDate(c.lastEmailed)}` : ''}</span></td>
+          <td>${typePill(t)}${t.ai ? '<br><span class="muted">AI</span>' : ''}</td>
+          <td>${pill(t.temp)}</td>
+          <td class="why">${esc([...t.why, ...t.flags].join(' · '))}${t.ai ? `<div class="ai-summary">${esc(t.ai.summary)}</div>` : ''}</td></tr>`; }).join('');
+        const n = list.filter(c => checked.has(c.id)).length, noMail = list.filter(c => !emailable(c)).length;
+        $('#em-count').textContent = `${n} selected of ${list.length}${noMail ? ` · ${noMail} without an email address` : ''}`;
+        const sendBtn = $('#em-send'); if (sendBtn) { sendBtn.textContent = n === 1 ? 'Send 1 email' : `Send ${n} emails`; sendBtn.disabled = !n || sending; }
+        const openBtn = $('#em-open'); if (openBtn) { openBtn.disabled = !sel || !emailable(clientById(sel)); }
+        $('#em-all').checked = n > 0 && n === list.filter(emailable).length;
+        if (!sel || !list.find(c => c.id === sel)) sel = (list.find(c => checked.has(c.id)) || list[0] || {}).id || null;
+        renderPreview();
+      }
+      function renderPreview() {
+        const c = clientById(sel);
+        if (!c) { prev.innerHTML = '<div class="muted">Select a lead to preview their email.</div>'; return; }
+        const d = draftFor(c, overrides), t = leadType(c);
+        prev.innerHTML = `<div class="card-head" style="margin-bottom:6px"><b>Preview: ${esc(clientName(c))}</b><span class="muted">${t.ai ? 'AI draft' : `${esc(t.label)} template`} · edits here apply to this lead only · fields: ${TEMPLATE_FIELDS}</span></div>
+          <div class="field"><label>Subject</label><input id="em-subj" value="${esc(d.subject)}"></div>
+          <div class="field"><label>Message</label><textarea id="em-body">${esc(d.body)}</textarea></div>
+          <div class="email-note">Sends as: <b>${esc(fillTemplate(d.subject, c))}</b></div>`;
+        const store = () => { overrides[c.id] = { subject: $('#em-subj').value, body: $('#em-body').value }; $('.email-note b', prev).textContent = fillTemplate($('#em-subj').value, c); };
+        $('#em-subj').addEventListener('input', store); $('#em-body').addEventListener('input', store);
+      }
+      rowsEl.addEventListener('click', e => {
+        const cb = e.target.closest('[data-check]');
+        if (cb) { cb.checked ? checked.add(cb.dataset.check) : checked.delete(cb.dataset.check); sel = cb.dataset.check; renderRows(); return; }
+        const tr = e.target.closest('tr[data-id]'); if (tr) { sel = tr.dataset.id; renderRows(); }
+      });
+      $('#em-all').addEventListener('change', e => { visible().filter(emailable).forEach(c => e.target.checked ? checked.add(c.id) : checked.delete(c.id)); renderRows(); });
+      if ($('#em-status')) $('#em-status').addEventListener('change', e => { statusFilter = e.target.value; visible().filter(emailable).forEach(c => checked.add(c.id)); renderRows(); });
+      if ($('#em-due')) $('#em-due').addEventListener('change', e => { dueOnly = e.target.checked; renderRows(); });
+      $('#em-templates').addEventListener('click', () => openTemplates(() => openEmailLeads(onlyIds)));
+      $('[data-cancel]', body).addEventListener('click', closeModal);
+      if ($('#em-copy')) $('#em-copy').addEventListener('click', () => {
+        const addrs = visible().filter(c => checked.has(c.id)).map(c => c.email.trim());
+        navigator.clipboard.writeText(addrs.join(', ')).then(() => toast(`Copied ${addrs.length} addresses`), () => prompt('Copy these addresses:', addrs.join(', ')));
+      });
+      if ($('#em-open')) $('#em-open').addEventListener('click', () => {
+        const c = clientById(sel); if (!c || !emailable(c)) return;
+        const d = draftFor(c, overrides);
+        location.href = `mailto:${encodeURIComponent(c.email.trim())}?subject=${encodeURIComponent(fillTemplate(d.subject, c))}&body=${encodeURIComponent(fillTemplate(d.body, c))}`;
+        markEmailed([c], $('#em-followup').checked, leadType(c).label); renderRows();
+      });
+      if ($('#em-ai')) $('#em-ai').addEventListener('click', async () => {
+        const list = visible().filter(c => checked.has(c.id)); if (!list.length) return toast('Select the leads to analyze first');
+        const btn = $('#em-ai'); btn.disabled = true; btn.textContent = `Analyzing ${list.length}…`;
+        try {
+          const payload = list.map(c => { const t = leadType(c); return { id: c.id, first: c.first, age: ageFromDob(c.dob), state: c.state, tobacco: c.tobacco, heightIn: c.height, weightLb: c.weight, health: c.health, notes: c.notes, source: c.source, status: c.status, followUp: c.followUp, createdAt: c.createdAt,
+            policies: db.policies.filter(p => p.clientId === c.id).map(p => `${p.carrier} ${p.productType} ${money(p.face)} ${p.status}`), ruleType: t.ruleKey, ruleTemperature: t.ruleTemp }; });
+          const templates = {}; Object.keys(LEAD_TYPES).forEach(k => templates[k] = tpl(k));
+          const r = await api('/api/leads/analyze', { method: 'POST', body: JSON.stringify({ leads: payload, agent: db.settings.agentName, phone: db.settings.agentPhone, templates }) });
+          r.results.forEach(x => { aiDrafts[x.id] = x; const c = clientById(x.id); if (c) { c.leadSummary = x.summary; delete overrides[x.id]; } });
+          save(); toast(`Analyzed ${r.results.length} leads with ${r.model}`);
+        } catch (e) { toast(e.message); }
+        btn.disabled = false; btn.textContent = '✨ Analyze with AI'; renderRows();
+      });
+      if ($('#em-send')) $('#em-send').addEventListener('click', async () => {
+        const list = visible().filter(c => checked.has(c.id) && emailable(c)); if (!list.length) return;
+        if (list.length > 50 && !confirm(`Send ${list.length} emails now? Personal Gmail/Outlook accounts can flag large batches as spam; 50 or fewer per day is safer.`)) return;
+        if (!confirm(`Send ${list.length === 1 ? 'this email' : list.length + ' personalized emails'} now?`)) return;
+        sending = true; const btn = $('#em-send'); btn.disabled = true; btn.textContent = 'Sending…';
+        try {
+          const recipients = list.map(c => { const d = draftFor(c, overrides); return { id: c.id, email: c.email.trim(), first: c.first, last: c.last, subject: d.subject, body: d.body }; });
+          const r = await api('/api/email/send', { method: 'POST', body: JSON.stringify({ recipients, agent: db.settings.agentName, phone: db.settings.agentPhone }) });
+          const okIds = new Set(r.results.filter(x => x.ok).map(x => x.id));
+          markEmailed(list.filter(c => okIds.has(c.id)), $('#em-followup').checked);
+          const failed = r.results.filter(x => !x.ok);
+          toast(failed.length ? `Sent ${r.sent}, ${failed.length} failed (${failed[0].error})` : `Sent ${r.sent} email${r.sent === 1 ? '' : 's'}`);
+          if (!failed.length) { closeModal(); renderAll(); return; }
+          failed.forEach(x => { const c = clientById(x.id); if (c) c.lastEmailError = x.error; });
+        } catch (e) { toast(e.message); }
+        sending = false; renderRows(); renderAll();
+      });
+      renderRows();
+    });
+  }
+  function markEmailed(list, setFollowUp, labelOverride) {
+    const d = new Date(); d.setDate(d.getDate() + 3); const fu = d.toISOString().slice(0, 10);
+    list.forEach(c => {
+      const t = leadType(c);
+      c.lastEmailed = today(); c.lastEmailType = labelOverride || t.label; delete c.lastEmailError;
+      if (setFollowUp && (!c.followUp || c.followUp < today())) c.followUp = fu;
+      logActivity(`Emailed ${clientName(c)} (${t.label}, ${t.temp})`);
+    });
+    if (list.length) save();
+  }
+  function openTemplates(back) {
+    const keys = Object.keys(LEAD_TYPES);
+    openModal('Email templates', `
+      <p class="muted">One template per lead type. Fields you can use: <code>${TEMPLATE_FIELDS}</code>. Your name and phone come from Settings. Leave a template as is to keep the built-in wording.</p>
+      <form id="tpl-form">
+        ${keys.map(k => { const t = tpl(k); return `<div class="field full" style="margin-bottom:12px"><label>${esc(LEAD_TYPES[k].label)}</label><input name="${k}_subject" value="${esc(t.subject)}" placeholder="Subject"><textarea name="${k}_body" style="margin-top:6px;min-height:120px">${esc(t.body)}</textarea></div>`; }).join('')}
+        <div class="form-actions"><button type="button" class="btn btn-ghost btn-danger" id="tpl-reset">Reset all to built-in</button><div class="right"><button type="button" class="btn" data-cancel>Cancel</button><button class="btn btn-primary">Save templates</button></div></div>
+      </form>`, body => {
+      const form = $('#tpl-form');
+      form.addEventListener('submit', e => {
+        e.preventDefault();
+        const d = Object.fromEntries(new FormData(form).entries()), out = {};
+        keys.forEach(k => { const subject = d[k + '_subject'].trim(), bodyText = d[k + '_body'].trim(); if (subject !== DEFAULT_TEMPLATES[k].subject || bodyText !== DEFAULT_TEMPLATES[k].body) out[k] = { subject, body: bodyText }; });
+        db.settings.emailTemplates = out; save(); toast('Templates saved'); closeModal(); if (back) back();
+      });
+      $('[data-cancel]', body).addEventListener('click', () => { closeModal(); if (back) back(); });
+      $('#tpl-reset').addEventListener('click', () => { if (confirm('Reset every template to the built-in wording?')) { db.settings.emailTemplates = {}; save(); closeModal(); openTemplates(back); } });
+    });
+  }
 
   // ---------- navigation ----------
   function showTab(name) {
@@ -261,7 +481,10 @@
     const s = db.settings;
     openModal('Settings', `
       <form id="settings-form" class="form-grid">
-        <div class="field full"><label>Your name (shown on backups)</label><input name="agentName" value="${esc(s.agentName)}"></div>
+        <div class="field"><label>Your name (emails are signed with it)</label><input name="agentName" value="${esc(s.agentName)}"></div>
+        <div class="field"><label>Your phone (goes under your name in emails)</label><input name="agentPhone" value="${esc(s.agentPhone)}" type="tel"></div>
+        <div class="field full" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button type="button" class="btn btn-sm" data-action="email-templates">Edit email templates</button>
+          <span class="muted">${remote ? `Sending: ${me.email ? 'ready (SMTP)' : 'not set up, add SMTP_* to .env'} · AI lead analysis: ${me.ai ? 'ready (' + esc(me.aiModel) + ')' : 'not set up, add ANTHROPIC_API_KEY to .env'}` : 'Run the portal server to send email from the app.'}</span></div>
         <div class="field"><label>Default commission % — Term Life</label><input name="r_term" type="number" step="0.5" value="${esc(s.rates['Term Life'])}"></div>
         <div class="field"><label>Default commission % — IUL</label><input name="r_iul" type="number" step="0.5" value="${esc(s.rates['IUL'])}"></div>
         <div class="field"><label>Default commission % — Whole Life</label><input name="r_whole" type="number" step="0.5" value="${esc(s.rates['Whole Life'])}"></div>
@@ -277,7 +500,7 @@
       form.addEventListener('submit', async e => {
         e.preventDefault();
         const d = Object.fromEntries(new FormData(form).entries());
-        s.agentName = d.agentName; s.rates = { 'Term Life': +d.r_term || 0, 'IUL': +d.r_iul || 0, 'Whole Life': +d.r_whole || 0 }; s.advance = +d.advance || 0; s.theme = d.theme;
+        s.agentName = d.agentName; s.agentPhone = d.agentPhone || ''; s.rates = { 'Term Life': +d.r_term || 0, 'IUL': +d.r_iul || 0, 'Whole Life': +d.r_whole || 0 }; s.advance = +d.advance || 0; s.theme = d.theme;
         if (remote && d.pw_new) {
           try { await api('/api/auth/password', { method: 'POST', body: JSON.stringify({ current: d.pw_cur, next: d.pw_new }) }); toast('Password changed'); }
           catch (err) { toast(err.message); return; }
@@ -323,6 +546,8 @@
     if (a === 'edit-policy') openPolicyForm(b.dataset.id);
     if (a === 'edit-payment') openPaymentForm(b.dataset.id);
     if (a === 'goto-client') { ui.clientSel = b.dataset.id; showTab('clients'); }
+    if (a === 'email-leads') openEmailLeads(b.dataset.id ? [b.dataset.id] : null);
+    if (a === 'email-templates') openTemplates();
     if (a === 'quote-client') { const c = clientById(b.dataset.id); showTab('cheatsheet'); if (c && c.height && c.weight) { ui.buildPreset = { h: c.height, w: c.weight }; } }
   });
 
@@ -400,11 +625,13 @@
     const c = clientById(ui.clientSel), el = $('#client-detail');
     if (!c) { el.innerHTML = '<div class="empty">Select a client to see details.</div>'; return; }
     const pols = db.policies.filter(p => p.clientId === c.id).sort((a, b) => (b.submittedDate || '').localeCompare(a.submittedDate || ''));
-    const h = c.height ? `${Math.floor(c.height / 12)}'${c.height % 12}"` : '';
+    const h = c.height ? `${Math.floor(c.height / 12)}'${c.height % 12}"` : '', lt = leadType(c);
     el.innerHTML = `
       <div class="detail-head"><div><h2>${esc(clientName(c))}</h2>${pill(c.status)} <span class="muted">added ${fmtDate(c.createdAt)}</span></div>
-        <div><button class="btn btn-sm" data-action="edit-client" data-id="${c.id}">Edit</button> <button class="btn btn-sm btn-primary" data-action="quote-client" data-id="${c.id}">Quote</button></div></div>
+        <div><button class="btn btn-sm" data-action="edit-client" data-id="${c.id}">Edit</button> <button class="btn btn-sm" data-action="email-leads" data-id="${c.id}" ${c.email ? '' : 'disabled title="No email address"'}>&#9993; Email</button> <button class="btn btn-sm btn-primary" data-action="quote-client" data-id="${c.id}">Quote</button></div></div>
       <dl class="kv">
+        <dt>Lead type</dt><dd>${typePill(lt)} ${pill(lt.temp)}<br><span class="muted">${esc([...lt.why, ...lt.flags].join(' · '))}</span>${c.leadSummary ? `<div class="ai-summary">${esc(c.leadSummary)}</div>` : ''}</dd>
+        <dt>Last emailed</dt><dd>${c.lastEmailed ? `${fmtDate(c.lastEmailed)}${c.lastEmailType ? ` <span class="muted">(${esc(c.lastEmailType)})</span>` : ''}` : '—'}${c.lastEmailError ? `<br><span style="color:var(--bad)">Last send failed: ${esc(c.lastEmailError)}</span>` : ''}</dd>
         <dt>Phone</dt><dd>${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : '—'}</dd>
         <dt>Email</dt><dd>${c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : '—'}</dd>
         <dt>DOB / age</dt><dd>${c.dob ? `${fmtDate(c.dob)} (${ageFromDob(c.dob)})` : '—'}</dd>

@@ -11,12 +11,15 @@ import mimetypes
 import os
 import re
 import secrets
+import smtplib
 import sys
 import threading
 import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
+from email.message import EmailMessage
+from email.utils import formataddr
 from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
@@ -335,6 +338,178 @@ def public_bank(b):
                                  'lastSync': i.get('lastSync'), 'error': i.get('error')} for i in b['items']]}}
 
 
+# ---------------------------------------------------------------- email (SMTP)
+EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+EMAIL_FIELDS = ('first', 'last', 'name', 'agent', 'phone')
+
+
+def smtp_configured():
+    return bool(os.environ.get('SMTP_HOST') and os.environ.get('SMTP_FROM'))
+
+
+def smtp_info():
+    return {'configured': smtp_configured(), 'from': os.environ.get('SMTP_FROM') or '', 'fromName': os.environ.get('SMTP_FROM_NAME') or ''}
+
+
+def fill_template(text, fields):
+    """Replace {first}, {last}, {name}, {agent}, {phone} (any case) with the recipient's values."""
+    return re.sub(r'\{(' + '|'.join(EMAIL_FIELDS) + r')\}', lambda m: str(fields.get(m.group(1).lower(), '')), str(text or ''), flags=re.I)
+
+
+def smtp_connect():
+    if not smtp_configured():
+        raise ApiError(400, 'Email sending is not set up. Add SMTP_HOST, SMTP_USER, SMTP_PASS and SMTP_FROM to .env and restart the server.')
+    host = os.environ['SMTP_HOST']
+    port = int(os.environ.get('SMTP_PORT') or 587)
+    secure = (os.environ.get('SMTP_SECURE') or ('ssl' if port == 465 else 'starttls')).lower()
+    try:
+        if secure == 'ssl':
+            conn = smtplib.SMTP_SSL(host, port, timeout=30)
+        else:
+            conn = smtplib.SMTP(host, port, timeout=30)
+            if secure == 'starttls':
+                conn.starttls()
+        if os.environ.get('SMTP_USER'):
+            conn.login(os.environ['SMTP_USER'], os.environ.get('SMTP_PASS') or '')
+        return conn
+    except smtplib.SMTPAuthenticationError:
+        raise ApiError(502, 'The mail server rejected the SMTP_USER / SMTP_PASS login. Gmail and Outlook need an app password, not your normal password.')
+    except (smtplib.SMTPException, OSError) as e:
+        raise ApiError(502, 'Could not connect to the mail server %s:%d: %s' % (host, port, e))
+
+
+def build_message(to_addr, to_name, subject, body):
+    msg = EmailMessage()
+    msg['From'] = formataddr((os.environ.get('SMTP_FROM_NAME') or '', os.environ['SMTP_FROM']))
+    msg['To'] = formataddr((to_name or '', to_addr))
+    msg['Subject'] = subject
+    if os.environ.get('SMTP_REPLY_TO'):
+        msg['Reply-To'] = os.environ['SMTP_REPLY_TO']
+    msg.set_content(body)
+    return msg
+
+
+def recipient_fields(r, agent, phone):
+    first, last = ' '.join(str(r.get('first') or '').split()), ' '.join(str(r.get('last') or '').split())
+    return {'first': first or 'there', 'last': last, 'name': ' '.join(x for x in (first, last) if x) or 'there', 'agent': agent, 'phone': phone}
+
+
+def send_emails(recipients, subject, body, agent, phone=''):
+    """One personalised message per recipient over a single SMTP connection. A recipient may carry its own subject/body."""
+    results = []
+    conn = smtp_connect()
+    try:
+        for r in recipients:
+            addr = str(r.get('email') or '').strip()
+            fields = recipient_fields(r, agent, phone)
+            res = {'id': r.get('id'), 'email': addr, 'ok': False}
+            subj = ' '.join(fill_template(r.get('subject') or subject, fields).split())   # headers must be single-line
+            text = fill_template(r.get('body') or body, fields).strip()
+            if not EMAIL_RE.match(addr):
+                res['error'] = 'Invalid email address'
+            elif not subj or not text:
+                res['error'] = 'Empty subject or message'
+            else:
+                try:
+                    conn.send_message(build_message(addr, fields['name'] if r.get('first') else '', subj, text))
+                    res['ok'] = True
+                except smtplib.SMTPRecipientsRefused:
+                    res['error'] = 'Address refused by the mail server'
+                except (smtplib.SMTPException, OSError) as e:
+                    res['error'] = str(e) or 'Send failed'
+            results.append(res)
+    finally:
+        try:
+            conn.quit()
+        except Exception:  # noqa
+            pass
+    return results
+
+
+# ---------------------------------------------------------------- lead analysis (Claude API, optional)
+AI_MODEL_DEFAULT = 'claude-opus-5-5'
+LEAD_TYPES = ('finalexpense', 'term', 'iul', 'quoted', 'general')
+LEAD_TEMPS = ('Hot', 'Warm', 'Cold')
+AI_SCHEMA = {
+    'type': 'object', 'additionalProperties': False, 'required': ['leads'],
+    'properties': {'leads': {'type': 'array', 'items': {
+        'type': 'object', 'additionalProperties': False,
+        'required': ['id', 'type', 'temperature', 'summary', 'subject', 'body'],
+        'properties': {
+            'id': {'type': 'string'},
+            'type': {'type': 'string', 'enum': list(LEAD_TYPES)},
+            'temperature': {'type': 'string', 'enum': list(LEAD_TEMPS)},
+            'summary': {'type': 'string'},
+            'subject': {'type': 'string'},
+            'body': {'type': 'string'}}}}}}
+AI_SYSTEM = """You help a licensed life insurance agent work their lead list. For each lead you receive, decide what kind of lead it is and write the email the agent should send next.
+
+Lead types:
+- finalexpense: 60+ or health/build issues, or asks about burial, funeral or final expense cover. Fit: whole life / final expense, simplified or guaranteed issue.
+- term: younger or middle-aged, protecting a mortgage, income or family. Fit: term life.
+- iul: wants cash value, retirement or tax-advantaged savings. Fit: indexed universal life.
+- quoted: already received a quote and has not decided. The email should move them to a decision.
+- general: not enough information to tell; the email should ask one or two simple questions.
+
+Temperature: Hot = quoted, referral, follow-up due, or asked to be contacted. Warm = recent lead with some interest. Cold = old lead, no engagement.
+
+Email rules: plain text, 90 to 150 words, warm and plain-spoken, no hype, no medical advice, no guarantees about approval or price, never mention a specific premium unless it is in the lead's notes. Use the lead's first name. Mention one concrete, relevant detail from their notes when there is one. Close with one clear next step (a 10-minute call or replying with a good time). Sign with the agent's name and phone. Write {first}, {agent} and {phone} literally as placeholders, do not fill them in. Do not include a subject line inside the body. Return one entry per lead, in the same order, using the same id."""
+
+
+def ai_configured():
+    return bool(os.environ.get('ANTHROPIC_API_KEY'))
+
+
+def ai_model():
+    return os.environ.get('ANTHROPIC_MODEL') or AI_MODEL_DEFAULT
+
+
+def ai_messages(payload):
+    headers = {'Content-Type': 'application/json', 'x-api-key': os.environ['ANTHROPIC_API_KEY'], 'anthropic-version': '2023-06-01',
+               'anthropic-beta': 'server-side-fallback-2026-07-01'}
+    req = urllib.request.Request('https://api.anthropic.com/v1/messages', data=json.dumps(payload).encode(), headers=headers, method='POST')
+    try:
+        with urllib.request.urlopen(req, timeout=300) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        try:
+            msg = json.loads(e.read()).get('error', {}).get('message') or str(e)
+        except ValueError:
+            msg = str(e)
+        if e.code == 401:
+            msg = 'the ANTHROPIC_API_KEY in .env was rejected.'
+        raise ApiError(502, 'Claude API: ' + msg)
+    except urllib.error.URLError as e:
+        raise ApiError(502, 'Could not reach the Claude API: %s' % e.reason)
+
+
+def ai_analyze(leads, agent, phone, templates):
+    """Classify a batch of leads and draft a personalised email for each. Returns (results aligned by id, model used)."""
+    if not ai_configured():
+        raise ApiError(400, 'AI analysis is not set up. Add ANTHROPIC_API_KEY to .env and restart the server.')
+    keep = ('id', 'first', 'age', 'state', 'tobacco', 'heightIn', 'weightLb', 'health', 'notes', 'source', 'status', 'followUp', 'createdAt', 'policies', 'ruleType', 'ruleTemperature')
+    clean = [{k: l.get(k) for k in keep if l.get(k) not in (None, '', [])} for l in leads if isinstance(l, dict) and l.get('id')]
+    base = {'agent': {'name': agent or 'the agent', 'phone': phone or ''}, 'today': datetime.now().strftime('%Y-%m-%d'), 'agentTemplates': templates or {}}
+    out, model = [], None
+    for i in range(0, len(clean), 12):
+        batch = dict(base, leads=clean[i:i + 12])
+        resp = ai_messages({
+            'model': ai_model(), 'max_tokens': 16000, 'fallbacks': 'default',
+            'system': [{'type': 'text', 'text': AI_SYSTEM, 'cache_control': {'type': 'ephemeral'}}],
+            'messages': [{'role': 'user', 'content': "Analyze these leads. agentTemplates are the agent's own starting points per lead type; keep their tone and offer but personalise each email.\n\n" + json.dumps(batch, indent=1)}],
+            'output_config': {'format': {'type': 'json_schema', 'schema': AI_SCHEMA}}})
+        model = resp.get('model') or model
+        if resp.get('stop_reason') == 'refusal':
+            raise ApiError(502, 'Claude declined to analyze this batch: %s' % ((resp.get('stop_details') or {}).get('explanation') or 'no reason given'))
+        text = next((b.get('text') for b in resp.get('content', []) if b.get('type') == 'text'), '')
+        try:
+            out.extend(json.loads(text).get('leads') or [])
+        except (ValueError, AttributeError):
+            raise ApiError(502, 'Claude returned something that was not valid JSON')
+    by_id = {str(x.get('id')): x for x in out}
+    return [by_id[str(l['id'])] for l in clean if str(l['id']) in by_id], model
+
+
 # ---------------------------------------------------------------- HTTP handler
 class Handler(BaseHTTPRequestHandler):
     server_version = 'LifeCRM/1.0'
@@ -497,7 +672,7 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith('/js/') and method == 'GET':
             return self._file(path.lstrip('/'))
         if path == '/api/me' and method == 'GET':
-            return self._json({'server': True, 'username': me['username'], 'plaid': plaid_configured()})
+            return self._json({'server': True, 'username': me['username'], 'plaid': plaid_configured(), 'email': smtp_configured(), 'ai': ai_configured(), 'aiModel': ai_model() if ai_configured() else ''})
         if path == '/api/auth/password' and method == 'POST':
             b = self._body()
             if not check_password(str(b.get('current') or ''), me['hash']):
@@ -636,6 +811,41 @@ class Handler(BaseHTTPRequestHandler):
                 write('bank', b)
             return self._json({'ok': True, 'bank': public_bank(b)})
 
+        # ---- email + lead analysis ----
+        if path == '/api/email/status' and method == 'GET':
+            return self._json(dict(smtp_info(), ai=ai_configured(), aiModel=ai_model() if ai_configured() else ''))
+        if path == '/api/email/send' and method == 'POST':
+            b = self._body()
+            recipients = b.get('recipients')
+            if not isinstance(recipients, list) or not recipients:
+                raise ApiError(400, 'Pick at least one recipient')
+            if len(recipients) > 200:
+                raise ApiError(400, 'Send to at most 200 people at a time')
+            recipients = [r for r in recipients if isinstance(r, dict)]
+            subject, text = str(b.get('subject') or '').strip(), str(b.get('body') or '').strip()
+            if any(not (r.get('subject') or subject) or not (r.get('body') or text) for r in recipients):
+                raise ApiError(400, 'Every email needs a subject and a message')
+            results = send_emails(recipients, subject, text, str(b.get('agent') or '').strip(), str(b.get('phone') or '').strip())
+            sent = sum(1 for r in results if r['ok'])
+            return self._json({'ok': True, 'sent': sent, 'failed': len(results) - sent, 'results': results})
+        if path == '/api/email/test' and method == 'POST':
+            b = self._body()
+            to = str(b.get('to') or os.environ.get('SMTP_FROM') or '').strip()
+            results = send_emails([{'id': 'test', 'email': to, 'first': 'Test'}], 'Life Insurance CRM test email',
+                                  'Hi {first},\n\nEmail sending from your Life Insurance CRM works.\n\n{agent}', str(b.get('agent') or '').strip())
+            if not results[0]['ok']:
+                raise ApiError(502, results[0].get('error') or 'Send failed')
+            return self._json({'ok': True, 'to': to})
+        if path == '/api/leads/analyze' and method == 'POST':
+            b = self._body()
+            leads = b.get('leads')
+            if not isinstance(leads, list) or not leads:
+                raise ApiError(400, 'Pick at least one lead')
+            if len(leads) > 100:
+                raise ApiError(400, 'Analyze at most 100 leads at a time')
+            results, model = ai_analyze(leads, str(b.get('agent') or '').strip(), str(b.get('phone') or '').strip(), b.get('templates') if isinstance(b.get('templates'), dict) else {})
+            return self._json({'ok': True, 'results': results, 'model': model or ai_model()})
+
         raise ApiError(404, 'Not found')
 
 
@@ -648,7 +858,7 @@ def serve(host=HOST, port=PORT):
 if __name__ == '__main__':
     httpd = serve()
     shown = 'localhost' if HOST in ('0.0.0.0', '') else HOST
-    print('Life Insurance CRM running at http://%s:%d   (data in %s, Plaid %s)' % (shown, httpd.server_address[1], DATA_DIR, plaid_env() if plaid_configured() else 'not configured'))
+    print('Life Insurance CRM running at http://%s:%d   (data in %s, Plaid %s, email %s, AI %s)' % (shown, httpd.server_address[1], DATA_DIR, plaid_env() if plaid_configured() else 'not configured', os.environ.get('SMTP_HOST') if smtp_configured() else 'not configured', ai_model() if ai_configured() else 'not configured'))
     if not users():
         print('No login yet - open the address above to create yours.')
     print('Press Ctrl+C to stop.')
