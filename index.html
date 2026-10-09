@@ -18,6 +18,7 @@
     <button class="tab" data-tab="clients">Clients</button>
     <button class="tab" data-tab="policies">Policies</button>
     <button class="tab" data-tab="money">Money</button>
+    <button class="tab" data-tab="commissions">Commissions</button>
     <button class="tab" data-tab="bank" id="tab-bank" hidden>Bank</button>
     <button class="tab tab-accent" data-tab="cheatsheet">Quote Cheat Sheet</button>
   </nav>
@@ -123,6 +124,53 @@
     <div class="card table-card">
       <div class="card-head"><h2>Payment ledger</h2></div>
       <div id="payment-table-wrap"></div>
+    </div>
+  </section>
+
+  <!-- COMMISSIONS -->
+  <section class="view" id="view-commissions">
+    <div class="view-head">
+      <h1>Commissions</h1>
+      <div class="view-actions">
+        <input type="search" id="comm-search" placeholder="Search client, carrier, policy #…">
+        <select id="comm-carrier"><option value="">All carriers</option></select>
+        <select id="comm-filter">
+          <option value="problems">Problems only</option>
+          <option value="">Every policy</option>
+          <option value="waiting">Waiting on advance</option>
+          <option value="under">Underpaid</option>
+          <option value="over">Overpaid</option>
+          <option value="ok">Paid correctly</option>
+          <option value="risk">Inside advance period</option>
+          <option value="lapsed">Lapsed / chargeback</option>
+        </select>
+        <button class="btn btn-primary" data-action="new-payment">+ Payment</button>
+      </div>
+    </div>
+    <div class="tiles" id="comm-tiles"></div>
+    <div class="card table-card">
+      <div class="card-head"><h2>Policy-by-policy check</h2><span class="muted">What each carrier should have paid you by today, against what you have logged. Click a row for the breakdown.</span></div>
+      <div id="comm-table"></div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-head"><h2>By carrier</h2><span class="muted">expected to date vs received</span></div>
+        <div id="comm-carriers"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Chargeback watch</h2><span class="muted">unearned advance a lapse would claw back</span></div>
+        <div id="comm-risk"></div>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-head"><h2>Coming up</h2><span class="muted">next 60 days</span></div>
+        <div id="comm-upcoming"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>How the numbers work</h2></div>
+        <div id="comm-help" class="help-text"></div>
+      </div>
     </div>
   </section>
 

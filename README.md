@@ -85,6 +85,33 @@ personal email for each lead in the tone of your templates. You see every draft 
 to the API in batches of 12; health notes are included because they drive the recommendation, so only turn this on if
 you are comfortable with that. The model defaults to `claude-opus-5-5` (`ANTHROPIC_MODEL` overrides it).
 
+## Commissions tab: getting paid the right amount
+
+The **Money** tab is the ledger of what came in. The **Commissions** tab checks it: for every policy it works out what
+the carrier should have paid you *by today* and compares that with the payments you have linked to the policy.
+
+**Expected to date** = advance + as-earned months + renewals − chargeback, where
+
+- the **advance** (advance % × first-year commission) is due once the policy is Issued or Paid and covers the first
+  N months (75% = 9 months, 50% = 6);
+- after the advance period each premium paid earns **monthly premium × rate** ("as earned");
+- from month 13 the policy pays **renewals** at the renewal % (per policy, or the default in Settings; 0 = not tracked);
+- if the policy **lapses** inside the advance period the carrier claws back the unearned part: advance − months paid ×
+  monthly commission. Put the lapse date on the policy to get this exact.
+
+Every policy gets a verdict: **Paid correctly**, **Underpaid**, **Overpaid**, **Overcharged** (a chargeback bigger than
+the unearned advance), **Waiting on advance** / **Advance overdue** (issued, nothing logged), **Not due yet**, or
+**Set lapse date**. "Problems only" is the default view; the tiles total what you are short, what is over, advances
+you are waiting on, and the **advance at risk** (what a lapse today would claw back). Click a row for the full
+breakdown, the payments against it, a month-by-month schedule, and a box to **accept** an explained difference so it
+stops showing as a problem. **By carrier** sums expected vs received per carrier so you can check a statement at a
+glance, **Chargeback watch** lists policies still inside their advance period and lapsed ones with what should have
+been clawed back, and **Coming up** shows the next 60 days: as-earned starting, year-2 renewals starting, overdue
+advances.
+
+Only payments linked to a policy can be checked, so link them (the tile tells you how many are not). Bonus and Other
+payments are shown but not counted against the expected amount. Differences of $1 or less are ignored.
+
 ## Tabs
 
 - **Dashboard** – annual premium written this month / YTD, commission received YTD, commission still in the
@@ -96,6 +123,7 @@ you are comfortable with that. The model defaults to `claude-opus-5-5` (`ANTHROP
   rate and advance %. Annual premium, first-year commission and the advance you should receive are calculated.
 - **Money** – ledger of commission statements, chargebacks, renewals and bonuses; received by month and by carrier;
   an **Owed to me** list of issued/paid policies whose advance hasn't been fully logged.
+- **Commissions** – see above: expected vs received per policy and per carrier, chargeback watch, what's coming up.
 - **Bank** – see above (portal only).
 - **Quote Cheat Sheet** – click **Term Life**, **IUL** or **Whole Life** for that product's carrier cards, the full
   A–Z condition grid color-coded like the PDF guides, keyword search, a height/weight build checker across every

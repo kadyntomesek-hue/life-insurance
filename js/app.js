@@ -61,7 +61,7 @@
   function defaults() {
     return {
       clients: [], policies: [], payments: [], activity: [],
-      settings: { agentName: '', agentPhone: '', rates: { 'Term Life': 80, 'IUL': 90, 'Whole Life': 100 }, advance: 75, theme: 'auto', emailTemplates: {} }
+      settings: { agentName: '', agentPhone: '', rates: { 'Term Life': 80, 'IUL': 90, 'Whole Life': 100 }, advance: 75, renewal: 0, theme: 'auto', emailTemplates: {} }
     };
   }
   function merge(d) { return Object.assign(defaults(), d, { settings: Object.assign(defaults().settings, (d && d.settings) || {}) }); }
@@ -104,6 +104,47 @@
   function expectedAdvance(p) { return expectedTotal(p) * (Number(p.advance) || 0) / 100; }
   function receivedFor(policyId) { return db.payments.filter(x => x.policyId === policyId).reduce((s, x) => s + Number(x.amount || 0), 0); }
   function monthKey(s) { return (s || '').slice(0, 7); }
+
+  // ---------- commission math ----------
+  // One place that answers: what should this policy have paid me by today, and what did it pay?
+  const DEAD = ['Declined', 'Lapsed', 'Chargeback'];
+  const TOLERANCE = 1;   // dollars of difference we ignore (rounding on carrier statements)
+  function monthsBetween(a, b) {
+    if (!a) return 0; const d1 = new Date(a + 'T00:00:00'), d2 = new Date((b || today()) + 'T00:00:00'); if (isNaN(d1) || isNaN(d2)) return 0;
+    let m = (d2.getFullYear() - d1.getFullYear()) * 12 + d2.getMonth() - d1.getMonth(); if (d2.getDate() < d1.getDate()) m--; return Math.max(0, m);
+  }
+  function addMonths(s, n) { const d = new Date(s + 'T00:00:00'); if (isNaN(d)) return ''; d.setMonth(d.getMonth() + n); return d.toISOString().slice(0, 10); }
+  function renewalRateOf(p) { return p.renewalRate !== undefined && p.renewalRate !== '' && p.renewalRate !== null ? Number(p.renewalRate) || 0 : Number(db.settings.renewal) || 0; }
+  function paymentsFor(policyId) { return db.payments.filter(x => x.policyId === policyId); }
+  function commission(p) {
+    const ap = annualPremium(p), rate = (Number(p.commRate) || 0) / 100, fyc = ap * rate, advPct = (Number(p.advance) || 0) / 100;
+    const advance = fyc * advPct, advMonths = Math.round(advPct * 12), mc = fyc / 12, renPct = renewalRateOf(p) / 100;
+    const start = p.issuedDate || p.submittedDate || '';
+    const live = !DEAD.includes(p.status), paid = ['Issued', 'Paid'].includes(p.status), pending = ['Submitted', 'Pending', 'Approved'].includes(p.status);
+    const lapsed = p.status === 'Lapsed' || p.status === 'Chargeback', declined = p.status === 'Declined';
+    const end = live ? today() : (p.lapseDate || today());
+    const months = (paid || lapsed) && start ? monthsBetween(start, end) + 1 : 0;   // premiums paid so far, counting the first one at issue
+    const y1 = Math.min(months, 12), ren = Math.max(0, months - 12);
+    const earned = y1 * mc, asEarned = Math.max(0, y1 - advMonths) * mc, renewals = ren * (ap / 12) * renPct;
+    const advanceDue = (paid || lapsed) ? advance : 0;
+    const chargeback = lapsed ? Math.max(0, advance - earned) : 0;
+    const expected = advanceDue + asEarned + renewals - chargeback;
+    const pays = paymentsFor(p.id), counted = pays.filter(x => !['Bonus', 'Other'].includes(x.type));
+    const received = counted.reduce((t, x) => t + Number(x.amount || 0), 0), extras = pays.filter(x => ['Bonus', 'Other'].includes(x.type)).reduce((t, x) => t + Number(x.amount || 0), 0);
+    const clawed = -counted.filter(x => x.amount < 0).reduce((t, x) => t + Number(x.amount), 0);
+    const diff = received - expected, atRisk = live && paid ? Math.max(0, advance - earned) : 0;
+    const advEnds = start ? addMonths(start, advMonths) : '', renewalStart = start ? addMonths(start, 12) : '';
+    let status, kind;
+    if (p.commResolved) { status = 'Accepted'; kind = 'ok'; }
+    else if (declined) { status = received > TOLERANCE ? 'Overpaid' : 'Nothing due'; kind = received > TOLERANCE ? 'over' : 'ok'; }
+    else if (pending) { status = received > TOLERANCE ? 'Overpaid' : 'Not due yet'; kind = received > TOLERANCE ? 'over' : 'pending'; }
+    else if (lapsed && !p.lapseDate) { status = 'Set lapse date'; kind = 'problem'; }
+    else if (Math.abs(diff) <= TOLERANCE) { status = 'Paid correctly'; kind = 'ok'; }
+    else if (diff < 0 && received <= 0 && !lapsed) { status = monthsBetween(start, today()) >= 1 ? 'Advance overdue' : 'Waiting on advance'; kind = 'waiting'; }
+    else if (diff < 0) { status = lapsed && clawed > chargeback + TOLERANCE ? 'Overcharged' : 'Underpaid'; kind = 'under'; }
+    else { status = 'Overpaid'; kind = 'over'; }
+    return { p, ap, rate, fyc, advance, advMonths, mc, start, months, y1, ren, earned, asEarned, renewals, advanceDue, chargeback, clawed, expected, received, extras, diff, atRisk, advEnds, renewalStart, status, kind, live, paid, pending, lapsed, declined, inAdvance: live && paid && y1 < advMonths, renPct };
+  }
 
   // ---------- lead analysis ----------
   // Rule-based: works offline. The optional AI pass (server + ANTHROPIC_API_KEY) refines it and writes a personal draft.
@@ -305,7 +346,7 @@
   $('#tabs').addEventListener('click', e => { const b = e.target.closest('.tab'); if (b) showTab(b.dataset.tab); });
 
   function render(name) {
-    ({ dashboard: renderDashboard, clients: renderClients, policies: renderPolicies, money: renderMoney, bank: renderBank, cheatsheet: renderCheat }[name] || (() => {}))();
+    ({ dashboard: renderDashboard, clients: renderClients, policies: renderPolicies, money: renderMoney, commissions: renderCommissions, bank: renderBank, cheatsheet: renderCheat }[name] || (() => {}))();
   }
   function renderAll() { const active = $('.tab.active').dataset.tab; render(active); }
 
@@ -391,6 +432,8 @@
         <div class="field"><label>Advance (% paid up front)</label><input name="advance" value="${esc(adv)}" type="number" min="0" max="100" step="1"></div>
         <div class="field"><label>Submitted</label><input name="submittedDate" value="${esc(p.submittedDate || today())}" type="date"></div>
         <div class="field"><label>Issued / effective</label><input name="issuedDate" value="${esc(p.issuedDate)}" type="date"></div>
+        <div class="field"><label>Renewal rate (% of premium, year 2+)</label><input name="renewalRate" value="${esc(p.renewalRate)}" type="number" min="0" max="100" step="0.5" placeholder="default ${esc(db.settings.renewal || 0)}%"></div>
+        <div class="field"><label>Lapsed / cancelled on (if it lapsed)</label><input name="lapseDate" value="${esc(p.lapseDate)}" type="date"></div>
         <div class="full calc-box" id="policy-calc"></div>
         <div class="field full"><label>Notes</label><textarea name="notes">${esc(p.notes)}</textarea></div>
         <div class="form-actions full">
@@ -407,7 +450,7 @@
       const calc = () => {
         const d = Object.fromEntries(new FormData(form).entries());
         const ap = annualPremium(d), tot = expectedTotal(d), adv = expectedAdvance(d);
-        $('#policy-calc').innerHTML = `<div>Annual premium<b>${money2(ap)}</b></div><div>Total commission (first year)<b>${money2(tot)}</b></div><div>Advance you should see<b>${money2(adv)}</b></div>`;
+        $('#policy-calc').innerHTML = `<div>Annual premium<b>${money2(ap)}</b></div><div>Total commission (first year)<b>${money2(tot)}</b></div><div>Advance you should see<b>${money2(adv)}</b><span class="muted">covers ${Math.round((Number(d.advance) || 0) / 100 * 12)} months, then ${money2(tot / 12)}/mo as earned</span></div>`;
       };
       form.addEventListener('input', calc); calc();
       form.productType.addEventListener('change', () => { if (!id) { form.commRate.value = db.settings.rates[form.productType.value] || 0; calc(); } });
@@ -415,6 +458,7 @@
         e.preventDefault();
         const data = Object.fromEntries(new FormData(form).entries());
         ['face', 'premium', 'commRate', 'advance'].forEach(k => data[k] = Number(data[k]) || 0);
+        data.renewalRate = data.renewalRate === '' ? '' : Number(data.renewalRate) || 0;
         const cl = clientById(data.clientId);
         if (id) { Object.assign(p, data); logActivity(`Updated policy for ${clientName(cl)} (${data.carrier}, ${data.status})`); }
         else {
@@ -489,6 +533,7 @@
         <div class="field"><label>Default commission % — IUL</label><input name="r_iul" type="number" step="0.5" value="${esc(s.rates['IUL'])}"></div>
         <div class="field"><label>Default commission % — Whole Life</label><input name="r_whole" type="number" step="0.5" value="${esc(s.rates['Whole Life'])}"></div>
         <div class="field"><label>Default advance %</label><input name="advance" type="number" step="1" value="${esc(s.advance)}"></div>
+        <div class="field"><label>Default renewal % (year 2+)</label><input name="renewal" type="number" step="0.5" value="${esc(s.renewal || 0)}"></div>
         <div class="field"><label>Theme</label><select name="theme">${opts(['auto', 'light', 'dark'], s.theme || 'auto')}</select></div>
         <div class="field"><label>Danger zone</label><button type="button" class="btn btn-danger" id="wipe">Erase all data</button></div>
         ${remote ? `<div class="full" style="border-top:1px solid var(--border);padding-top:10px"><b>Change password</b> (signed in as ${esc(me.username)})</div>
@@ -500,7 +545,7 @@
       form.addEventListener('submit', async e => {
         e.preventDefault();
         const d = Object.fromEntries(new FormData(form).entries());
-        s.agentName = d.agentName; s.agentPhone = d.agentPhone || ''; s.rates = { 'Term Life': +d.r_term || 0, 'IUL': +d.r_iul || 0, 'Whole Life': +d.r_whole || 0 }; s.advance = +d.advance || 0; s.theme = d.theme;
+        s.agentName = d.agentName; s.agentPhone = d.agentPhone || ''; s.rates = { 'Term Life': +d.r_term || 0, 'IUL': +d.r_iul || 0, 'Whole Life': +d.r_whole || 0 }; s.advance = +d.advance || 0; s.renewal = +d.renewal || 0; s.theme = d.theme;
         if (remote && d.pw_new) {
           try { await api('/api/auth/password', { method: 'POST', body: JSON.stringify({ current: d.pw_cur, next: d.pw_new }) }); toast('Password changed'); }
           catch (err) { toast(err.message); return; }
@@ -548,6 +593,7 @@
     if (a === 'goto-client') { ui.clientSel = b.dataset.id; showTab('clients'); }
     if (a === 'email-leads') openEmailLeads(b.dataset.id ? [b.dataset.id] : null);
     if (a === 'email-templates') openTemplates();
+    if (a === 'commission-detail') openCommissionDetail(b.dataset.id);
     if (a === 'quote-client') { const c = clientById(b.dataset.id); showTab('cheatsheet'); if (c && c.height && c.weight) { ui.buildPreset = { h: c.height, w: c.weight }; } }
   });
 
@@ -702,6 +748,120 @@
   }
   $('#money-year').addEventListener('change', e => { ui.moneyYear = +e.target.value; renderMoney(); });
 
+  // ---------- COMMISSIONS ----------
+  function renderCommissions() {
+    const cs = $('#comm-carrier');
+    const carriers = Array.from(new Set(db.policies.map(p => p.carrier).filter(Boolean))).sort();
+    if (cs.options.length !== carriers.length + 1) cs.innerHTML = '<option value="">All carriers</option>' + opts(carriers);
+    cs.value = ui.commCarrier || '';
+    const q = ($('#comm-search').value || '').toLowerCase().trim(), filter = $('#comm-filter').value;
+    const all = db.policies.map(commission);
+    const matches = c => {
+      const p = c.p;
+      if (ui.commCarrier && p.carrier !== ui.commCarrier) return false;
+      if (q && ![clientName(clientById(p.clientId)), p.carrier, p.product, p.policyNo].join(' ').toLowerCase().includes(q)) return false;
+      if (filter === 'problems') return ['under', 'over', 'waiting', 'problem'].includes(c.kind);
+      if (filter === 'waiting') return c.kind === 'waiting';
+      if (filter === 'under') return c.kind === 'under';
+      if (filter === 'over') return c.kind === 'over';
+      if (filter === 'ok') return c.kind === 'ok';
+      if (filter === 'risk') return c.inAdvance;
+      if (filter === 'lapsed') return c.lapsed;
+      return true;
+    };
+    const rows = all.filter(matches).sort((a, b) => ({ problem: 0, under: 1, waiting: 2, over: 3, pending: 4, ok: 5 }[a.kind] - { problem: 0, under: 1, waiting: 2, over: 3, pending: 4, ok: 5 }[b.kind]) || Math.abs(b.diff) - Math.abs(a.diff));
+    const sum = (arr, k) => arr.reduce((t, c) => t + c[k], 0);
+    const under = all.filter(c => c.kind === 'under'), over = all.filter(c => c.kind === 'over'), waiting = all.filter(c => c.kind === 'waiting'), risk = all.filter(c => c.inAdvance);
+    const unlinked = db.payments.filter(x => !x.policyId || !policyById(x.policyId));
+    const tiles = [
+      ['Expected to date', money(sum(all, 'expected')), `${all.filter(c => c.expected > 0).length} policies with money due`],
+      ['Received (linked)', money(sum(all, 'received')), `plus ${money(sum(all, 'extras'))} bonuses / other`, 'good'],
+      ['Short', money(-sum(under, 'diff')), under.length ? `${under.length} underpaid / overcharged` : 'nothing short', under.length ? 'bad' : ''],
+      ['Over', money(sum(over, 'diff')), over.length ? `${over.length} paid more than expected` : 'nothing over'],
+      ['Waiting on advance', money(-sum(waiting, 'diff')), `${waiting.length} issued, nothing logged yet`, waiting.some(c => c.status === 'Advance overdue') ? 'bad' : ''],
+      ['Advance at risk', money(sum(risk, 'atRisk')), `${risk.length} still inside the advance period`],
+      ['Not linked to a policy', money(unlinked.reduce((t, x) => t + Number(x.amount || 0), 0)), unlinked.length ? `${unlinked.length} payments cannot be checked` : 'every payment is linked', unlinked.length ? 'bad' : '']
+    ];
+    $('#comm-tiles').innerHTML = tiles.map(t => `<div class="tile ${t[3] || ''}"><div class="label">${esc(t[0])}</div><div class="value">${esc(t[1])}</div><div class="sub">${esc(t[2])}</div></div>`).join('');
+    const diffCell = c => c.pending || c.declined ? '<span class="muted">—</span>' : `<span class="${c.diff < -TOLERANCE ? 'diff-neg' : c.diff > TOLERANCE ? 'diff-pos' : ''}">${c.diff > TOLERANCE ? '+' : ''}${money2(c.diff)}</span>`;
+    $('#comm-table').innerHTML = rows.length ? `<div class="table-scroll"><table class="data"><thead><tr><th>Client</th><th>Carrier</th><th>Status</th><th>Issued</th><th class="num">AP</th><th class="num">Rate · adv</th><th class="num">Expected to date</th><th class="num">Received</th><th class="num">Difference</th><th>Check</th><th></th></tr></thead><tbody>${rows.map(c => { const p = c.p; return `<tr data-action="commission-detail" data-id="${p.id}" style="cursor:pointer"><td><b>${esc(clientName(clientById(p.clientId)))}</b></td><td>${esc(p.carrier)}<br><span class="muted">${esc(p.product || '')} ${p.policyNo ? '#' + esc(p.policyNo) : ''}</span></td><td>${pill(p.status)}</td><td>${fmtDate(c.start) || '<span class="muted">—</span>'}${c.lapsed && p.lapseDate ? `<br><span class="muted">lapsed ${fmtDate(p.lapseDate)}</span>` : ''}</td><td class="num">${money(c.ap)}</td><td class="num">${p.commRate}% · ${p.advance}%</td><td class="num">${money2(c.expected)}<br><span class="muted">${c.chargeback ? `after ${money(c.chargeback)} chargeback` : c.asEarned || c.renewals ? `adv + ${money(c.asEarned + c.renewals)} earned` : c.advanceDue ? 'advance' : 'nothing yet'}</span></td><td class="num">${money2(c.received)}${c.extras ? `<br><span class="muted">+${money(c.extras)} bonus</span>` : ''}</td><td class="num">${diffCell(c)}</td><td>${pill(c.status)}</td><td><button class="btn btn-sm" data-action="new-payment" data-policy="${p.id}">Log</button></td></tr>`; }).join('')}</tbody></table></div>` : `<div class="empty">${db.policies.length ? (filter === 'problems' ? 'No problems found. Every checked policy is paid correctly, pending or waiting within its first month.' : 'No policies match.') : 'No policies yet. Add one on the Policies tab and the check appears here.'}</div>`;
+    // by carrier
+    const byCar = {};
+    all.forEach(c => { const k = c.p.carrier || 'Other'; const r = byCar[k] = byCar[k] || { expected: 0, received: 0, n: 0, problems: 0 }; r.expected += c.expected; r.received += c.received; r.n++; if (['under', 'over', 'waiting', 'problem'].includes(c.kind)) r.problems++; });
+    const carRows = Object.entries(byCar).sort((a, b) => (a[1].received - a[1].expected) - (b[1].received - b[1].expected));
+    $('#comm-carriers').innerHTML = carRows.length ? `<div class="table-scroll"><table class="data"><thead><tr><th>Carrier</th><th class="num">Policies</th><th class="num">Expected</th><th class="num">Received</th><th class="num">Difference</th></tr></thead><tbody>${carRows.map(([k, r]) => `<tr><td><b>${esc(k)}</b>${r.problems ? `<br><span class="muted">${r.problems} to look at</span>` : ''}</td><td class="num">${r.n}</td><td class="num">${money2(r.expected)}</td><td class="num">${money2(r.received)}</td><td class="num"><span class="${r.received - r.expected < -TOLERANCE ? 'diff-neg' : r.received - r.expected > TOLERANCE ? 'diff-pos' : ''}">${money2(r.received - r.expected)}</span></td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">No policies yet.</div>';
+    // chargeback watch
+    const riskRows = risk.slice().sort((a, b) => b.atRisk - a.atRisk);
+    const lapsedRows = all.filter(c => c.lapsed);
+    $('#comm-risk').innerHTML = (riskRows.length || lapsedRows.length) ? `${riskRows.length ? `<div class="table-scroll"><table class="data"><thead><tr><th>Client</th><th>Carrier</th><th class="num">Month</th><th>Advance earned by</th><th class="num">At risk</th></tr></thead><tbody>${riskRows.map(c => `<tr data-action="commission-detail" data-id="${c.p.id}" style="cursor:pointer"><td>${esc(clientName(clientById(c.p.clientId)))}</td><td>${esc(c.p.carrier)}</td><td class="num">${c.y1} of ${c.advMonths}</td><td>${fmtDate(c.advEnds)}</td><td class="num"><b>${money2(c.atRisk)}</b></td></tr>`).join('')}</tbody></table></div>` : ''}
+      ${lapsedRows.length ? `<h3 style="margin:12px 0 6px">Lapsed policies</h3><div class="table-scroll"><table class="data"><thead><tr><th>Client</th><th>Carrier</th><th>Lapsed</th><th class="num">Should claw back</th><th class="num">Clawed back</th><th>Check</th></tr></thead><tbody>${lapsedRows.map(c => `<tr data-action="commission-detail" data-id="${c.p.id}" style="cursor:pointer"><td>${esc(clientName(clientById(c.p.clientId)))}</td><td>${esc(c.p.carrier)}</td><td>${c.p.lapseDate ? fmtDate(c.p.lapseDate) : '<span class="muted">date?</span>'}</td><td class="num">${money2(c.chargeback)}</td><td class="num">${money2(c.clawed)}</td><td>${pill(c.status)}</td></tr>`).join('')}</tbody></table></div>` : ''}` : '<div class="empty">No issued policies inside their advance period and nothing lapsed.</div>';
+    // coming up
+    const horizon = addMonths(today(), 2), items = [];
+    all.filter(c => c.live && c.paid).forEach(c => {
+      if (c.advEnds && c.advEnds >= today() && c.advEnds <= horizon) items.push({ date: c.advEnds, text: `<b>${esc(clientName(clientById(c.p.clientId)))}</b> · ${esc(c.p.carrier)}: advance fully earned, as-earned ${money2(c.mc)}/mo should start`, id: c.p.id });
+      if (c.renewalStart && c.renewalStart >= today() && c.renewalStart <= horizon) items.push({ date: c.renewalStart, text: `<b>${esc(clientName(clientById(c.p.clientId)))}</b> · ${esc(c.p.carrier)}: year 2 begins, renewals ${c.renPct ? money2(c.ap / 12 * c.renPct) + '/mo' : 'not set (add a renewal % on the policy)'}`, id: c.p.id });
+    });
+    all.filter(c => c.status === 'Advance overdue').forEach(c => items.push({ date: today(), text: `<b>${esc(clientName(clientById(c.p.clientId)))}</b> · ${esc(c.p.carrier)}: advance of ${money2(c.advance)} still not logged, issued ${fmtDate(c.start)}`, id: c.p.id, bad: true }));
+    items.sort((a, b) => a.date.localeCompare(b.date));
+    $('#comm-upcoming').innerHTML = items.length ? `<ul class="mini-list">${items.map(i => `<li><span><span class="${i.bad ? 'pill s-lost' : 'pill'}">${fmtDate(i.date)}</span> ${i.text}</span><button class="btn btn-sm" data-action="commission-detail" data-id="${i.id}">Open</button></li>`).join('')}</ul>` : '<div class="empty">Nothing due to change in the next 60 days.</div>';
+    $('#comm-help').innerHTML = `<p><b>Expected to date</b> = advance + as-earned months + renewals − chargeback. The <b>advance</b> (advance % × first-year commission) is due once a policy is Issued or Paid. It covers the first ${Math.round((db.settings.advance || 0) / 100 * 12)} months at your default advance %; each month after that, the carrier owes <b>monthly premium × rate</b> "as earned". From month 13 the policy pays <b>renewals</b> at the renewal % (set per policy or in Settings; 0 means not tracked).</p>
+      <p>If a policy lapses inside the advance period the carrier claws back the <b>unearned</b> part: advance − months paid × monthly commission. Enter the lapse date on the policy to get this exact. <b>Overcharged</b> means they clawed back more than that.</p>
+      <p>Only payments linked to a policy are checked (Bonus and Other are shown separately). Differences within $${TOLERANCE} are ignored. Open a policy and tick <b>Accept this difference</b> when a gap is explained, so it stops showing as a problem.</p>`;
+  }
+  ['#comm-search', '#comm-filter'].forEach(sel => $(sel).addEventListener('input', renderCommissions));
+  $('#comm-carrier').addEventListener('change', e => { ui.commCarrier = e.target.value; renderCommissions(); });
+
+  function openCommissionDetail(id) {
+    const p = policyById(id); if (!p) return;
+    const c = commission(p), cl = clientById(p.clientId), pays = paymentsFor(p.id).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    const line = (label, v, cls, sub) => `<div>${label}${sub ? `<div class="sub">${sub}</div>` : ''}</div><div class="num ${cls || ''}">${v}</div>`;
+    const sched = [];
+    if (c.start) {
+      const horizonMonths = Math.max(c.months, Math.min(24, c.months + 3));
+      for (let m = 1; m <= Math.max(12, horizonMonths); m++) {
+        const date = addMonths(c.start, m - 1), paidMonth = m <= c.months;
+        const cov = m <= 12 ? (m <= c.advMonths ? 'advance' : 'asearned') : 'renewal';
+        const amt = m <= 12 ? c.mc : c.ap / 12 * c.renPct;
+        sched.push(`<tr class="${paidMonth ? '' : 'future'}"><td>${m}</td><td>${fmtDate(date)}</td><td class="cov-${cov}">${cov === 'advance' ? 'covered by advance' : cov === 'asearned' ? 'as earned' : 'renewal'}</td><td class="num">${money2(amt)}</td><td>${paidMonth ? (c.lapsed && m === c.months ? 'last premium before lapse' : 'premium paid') : c.lapsed ? '<span class="muted">lapsed</span>' : '<span class="muted">not yet</span>'}</td></tr>`);
+      }
+    }
+    openModal(`Commission check: ${clientName(cl)}`, `
+      <div class="muted" style="margin-bottom:6px">${esc(p.carrier)} ${esc(p.product || '')} ${p.policyNo ? '#' + esc(p.policyNo) : ''} · ${esc(p.productType)} · ${pill(p.status)} · ${money2(p.premium)}/${esc(p.mode || 'Monthly')} · ${p.commRate}% rate · ${p.advance}% advance${c.start ? ` · premiums from ${fmtDate(c.start)}` : ' · <b>no issue date</b>'}</div>
+      <div class="comm-breakdown">
+        ${line('Annual premium', money2(c.ap))}
+        ${line('First-year commission', money2(c.fyc), '', `${c.ap ? money2(c.ap) : '$0'} × ${p.commRate}%`)}
+        ${line('Advance due', money2(c.advanceDue), '', c.advanceDue ? `${p.advance}% of first-year commission, covers months 1–${c.advMonths}` : c.pending ? 'not due until the policy is issued / paid' : 'none')}
+        ${line('As-earned months', money2(c.asEarned), '', c.months ? `${c.y1} premium${c.y1 === 1 ? '' : 's'} paid so far, ${Math.max(0, c.y1 - c.advMonths)} beyond the advance × ${money2(c.mc)}` : '')}
+        ${line('Renewals', money2(c.renewals), '', c.ren ? `${c.ren} month${c.ren === 1 ? '' : 's'} in year 2+ × ${money2(c.ap / 12)} × ${c.renPct * 100}%` : c.renPct ? 'start in month 13' : 'renewal % not set')}
+        ${c.lapsed ? line('Chargeback (unearned advance)', '−' + money2(c.chargeback), 'neg', p.lapseDate ? `advance ${money2(c.advance)} − ${c.y1} months earned ${money2(c.earned)}` : '<b>enter the lapse date on the policy to get this right</b>') : ''}
+        ${line('<span class="total">Expected to date</span>', `<span class="total">${money2(c.expected)}</span>`)}
+        ${line('Received (linked payments)', money2(c.received), '', c.extras ? `plus ${money2(c.extras)} in bonus / other, not counted` : '')}
+        ${line('<b>Difference</b>', `<b class="${c.diff < -TOLERANCE ? 'diff-neg' : c.diff > TOLERANCE ? 'diff-pos' : ''}">${c.diff > 0 ? '+' : ''}${money2(c.diff)}</b>`, '', pill(c.status))}
+        ${c.inAdvance ? line('If it lapsed today they would claw back', money2(c.atRisk), 'neg', `advance earned in full on ${fmtDate(c.advEnds)}`) : ''}
+      </div>
+      <div class="card-head"><h3>Payments logged (${pays.length})</h3><button class="btn btn-sm" data-action="new-payment" data-policy="${p.id}">Log payment</button></div>
+      ${pays.length ? `<div class="table-scroll"><table class="data"><thead><tr><th>Date</th><th>Type</th><th>Note</th><th class="num">Amount</th></tr></thead><tbody>${pays.map(x => `<tr data-pay="${x.id}" style="cursor:pointer"><td>${fmtDate(x.date)}</td><td>${esc(x.type)}</td><td>${esc(x.note || '')}</td><td class="num" style="color:${x.amount < 0 ? 'var(--bad)' : 'inherit'}">${money2(x.amount)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted">Nothing logged against this policy yet.</div>'}
+      ${sched.length ? `<details style="margin-top:12px"><summary class="muted" style="cursor:pointer">Month-by-month schedule</summary><div class="table-scroll"><table class="data sched"><thead><tr><th>#</th><th>Premium due</th><th>Commission</th><th class="num">Amount</th><th>Status</th></tr></thead><tbody>${sched.join('')}</tbody></table></div></details>` : ''}
+      <form id="comm-form" class="form-grid" style="margin-top:14px">
+        <div class="field"><label>Lapsed / cancelled on</label><input name="lapseDate" type="date" value="${esc(p.lapseDate)}"></div>
+        <div class="field"><label>Renewal rate (% of premium)</label><input name="renewalRate" type="number" step="0.5" min="0" max="100" value="${esc(p.renewalRate)}" placeholder="default ${esc(db.settings.renewal || 0)}%"></div>
+        <div class="field full"><label>Note about this commission (e.g. "carrier pays 70% on this product")</label><input name="commNote" value="${esc(p.commNote)}"></div>
+        <div class="full"><label class="check-label"><input type="checkbox" name="commResolved" ${p.commResolved ? 'checked' : ''}> Accept this difference (stop showing it as a problem)</label></div>
+        <div class="form-actions full"><div><button type="button" class="btn btn-ghost" data-action="edit-policy" data-id="${p.id}">Edit policy</button></div><div class="right"><button type="button" class="btn" data-cancel>Close</button><button class="btn btn-primary">Save</button></div></div>
+      </form>`, body => {
+      const form = $('#comm-form');
+      form.addEventListener('submit', e => {
+        e.preventDefault();
+        const d = Object.fromEntries(new FormData(form).entries());
+        p.lapseDate = d.lapseDate || ''; p.renewalRate = d.renewalRate === '' ? '' : Number(d.renewalRate) || 0; p.commNote = d.commNote || ''; p.commResolved = !!d.commResolved;
+        if (p.lapseDate && !['Lapsed', 'Chargeback'].includes(p.status)) p.status = 'Lapsed';
+        save(); closeModal(); renderAll(); toast('Saved');
+      });
+      $('[data-cancel]', body).addEventListener('click', closeModal);
+      $$('[data-pay]', body).forEach(tr => tr.addEventListener('click', () => openPaymentForm(tr.dataset.pay)));
+    });
+  }
+
   // ---------- CHEAT SHEET ----------
   $$('.pick').forEach(b => b.addEventListener('click', () => { ui.product = b.dataset.product; ui.cheatSearch = ''; renderCheat(); window.scrollTo({ top: $('#cheat-body').offsetTop - 70, behavior: 'smooth' }); }));
 
@@ -815,7 +975,7 @@
     $('#tab-bank').hidden = !remote; $('#btn-logout').hidden = !remote;
     applyTheme();
     const start = (location.hash || '#dashboard').slice(1);
-    showTab(['dashboard', 'clients', 'policies', 'money', 'bank', 'cheatsheet'].includes(start) ? start : 'dashboard');
+    showTab(['dashboard', 'clients', 'policies', 'money', 'commissions', 'bank', 'cheatsheet'].includes(start) ? start : 'dashboard');
   })();
   $('#btn-logout').addEventListener('click', async () => { await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }); location.href = '/login'; });
 
