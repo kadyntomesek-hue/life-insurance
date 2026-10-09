@@ -1,8 +1,8 @@
 # Life Insurance CRM
 
-A CRM for a life insurance agent: clients, policies, commission money, a **Bank** tab that matches carrier deposits
-to your ledger, and a **Quote Cheat Sheet** built from the 2026 carrier underwriting guides (Term Life, IUL,
-Whole Life / Final Expense).
+A CRM for a life insurance agent: clients, policies, commission money, a **Commissions** check, a **Bank** tab that
+matches carrier deposits to your ledger, an **Email leads** screen, and a **Quoter** that reads the 2026 carrier
+underwriting guides (Term Life, IUL, Whole Life / Final Expense) and lists the carriers most likely to approve a client.
 
 It runs two ways:
 
@@ -116,7 +116,7 @@ payments are shown but not counted against the expected amount. Differences of $
 
 - **Dashboard** – annual premium written this month / YTD, commission received YTD, commission still in the
   pipeline, follow-ups due, a 12-month premium chart, pipeline by status, recent activity.
-- **Clients** – contact info, DOB/age, height, weight, tobacco, health & medication notes, lead source, status,
+- **Clients** – contact info, DOB/age, sex, height, weight, tobacco, health & medication notes, lead source, status,
   follow-up date, lead type and heat, last emailed. **Quote** jumps to the cheat sheet with the client's build pre-filled;
   **Email** opens the email screen for that one person; **Email leads** does the whole list.
 - **Policies** – carrier, product type (Term Life / IUL / Whole Life), face, premium and mode, status, commission
@@ -125,9 +125,15 @@ payments are shown but not counted against the expected amount. Differences of $
   an **Owed to me** list of issued/paid policies whose advance hasn't been fully logged.
 - **Commissions** – see above: expected vs received per policy and per carrier, chargeback watch, what's coming up.
 - **Bank** – see above (portal only).
-- **Quote Cheat Sheet** – click **Term Life**, **IUL** or **Whole Life** for that product's carrier cards, the full
-  A–Z condition grid color-coded like the PDF guides, keyword search, a height/weight build checker across every
-  carrier chart, the build charts, and product notes.
+- **Quoter** – type in date of birth, sex, state, height, weight, tobacco and the health conditions (start typing and
+  pick from the guides' A–Z list) and it scores all 17 carrier products from both underwriting guides: age band and
+  tobacco band from the carrier notes, "not sold in" states, the carrier's height/weight chart, and the color of every
+  selected condition's cell. Carriers come back in five groups, best first: **Most likely to approve** (level,
+  day-one), **Likely, graded or modified tier**, **Possible, depends on the details**, **Only a guaranteed-issue
+  route**, and **Unlikely** (collapsed, with the rule that knocked them out). Each card shows the exact underwriting
+  rule for each condition and the build verdict. **Quote** on a client card fills the form from the client, including
+  conditions picked out of their health notes. Sex is kept for the quote and the client record; the guides do not
+  rate by sex.
 
 ## Files
 

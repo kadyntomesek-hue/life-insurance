@@ -42,21 +42,24 @@
   };
   const CARRIERS = ['Americo', 'Mutual of Omaha', 'Transamerica', 'Fidelity Life', 'Corebridge / AGL', 'Aetna / Accendo', 'Foresters', 'Prosperity', 'American-Amicable', 'Ethos', 'National Life Group', 'Other'];
 
-  // Which carrier columns of each guide belong to each product button.
-  const PRODUCT_VIEWS = {
-    term: { guide: 'term', label: 'Term Life', cols: [0, 1, 3, 4, 5], blurb: 'Simplified-issue term carriers from the IUL & Term grid.' },
-    iul: { guide: 'term', label: 'IUL', cols: [1, 2, 6, 7], blurb: 'Indexed universal life carriers from the IUL & Term grid.' },
-    whole: { guide: 'whole', label: 'Whole Life', cols: [0, 1, 2, 3, 4, 5, 6, 7, 8], blurb: 'Final expense & whole life carriers.' }
-  };
-  const COLOR_LEGEND = [
-    ['green', 'Level / Day-1 / Select / OK / Standard'], ['blue', 'Modified / Graded / ROP / Basic'], ['orange', 'GI Route / Guaranteed Issue'],
-    ['yellow', 'Check Meds / See Condition'], ['purple', 'See Other Section (cross-ref)'], ['red', 'DECLINE / Ineligible']
+  // Which columns of the IUL & Term guide are term products and which are IUL (Mutual of Omaha is both).
+  const TERM_COLS = [0, 1, 3, 4, 5], IUL_COLS = [1, 2, 6, 7];
+  const COLOR_RANK = { green: 4, blue: 3, yellow: 2, purple: 2, orange: 1, red: 0 };
+  const COLOR_WORD = { green: 'level / day-one', blue: 'graded or modified', yellow: 'depends on details', purple: 'see related condition', orange: 'guaranteed-issue route', red: 'decline' };
+  const QUOTE_LEVELS = [
+    ['Unlikely to approve', 'declined by a condition, age, state or build rule'],
+    ['Only a guaranteed-issue route', 'graded benefit, usually 2-3 year wait'],
+    ['Possible, depends on the details', 'the rule hinges on timing, meds or severity; ask the follow-up questions'],
+    ['Likely, graded or modified tier', 'approved, but at a graded / modified / rated class'],
+    ['Most likely to approve', 'level, day-one coverage at the best class']
   ];
+  // Words in the client's health notes that point to a condition in the guides.
+  const CONDITION_ALIASES = { insulin: 'Diabetes', metformin: 'Diabetes', a1c: 'Diabetes', sugar: 'Diabetes', hypertension: 'High Blood Pressure', 'blood pressure': 'High Blood Pressure', lisinopril: 'High Blood Pressure', cpap: 'Sleep Apnea', 'heart failure': 'CHF', 'congestive': 'CHF', 'a-fib': 'AFib', 'atrial': 'AFib', 'bypass': 'Heart Surgery', cabg: 'Heart Surgery', 'kidney': 'Kidney Disease', 'renal': 'Kidney Disease', 'dialysis': 'Dialysis', 'oxygen': 'Oxygen Use', 'o2': 'Oxygen Use', 'copd': 'COPD', 'emphysema': 'Emphysema', 'seizure': 'Epilepsy', 'tia': 'Stroke', 'mini stroke': 'Stroke', 'dementia': 'Alzheimer', 'felony': 'Felony', 'dui': 'DUI', 'dwi': 'DUI', 'wheelchair': 'Wheelchair', 'obese': 'Obesity', 'overweight': 'Obesity', 'anxiety': 'Anxiety', 'xanax': 'Anxiety', 'prozac': 'Depression', 'zoloft': 'Depression', 'lexapro': 'Depression', 'opioid': 'Chronic Pain', 'oxycodone': 'Chronic Pain', 'hydrocodone': 'Chronic Pain', 'pain pills': 'Chronic Pain', 'cancer': 'Cancer', 'chemo': 'Cancer', 'stent': 'Stent', 'pacemaker': 'Pacemaker', 'defibrillator': 'Pacemaker', 'blood clot': 'Blood Clots', 'eliquis': 'AFib', 'xarelto': 'AFib', 'warfarin': 'Blood Clots', 'neuropathy': 'Neuropathy', 'arthritis': 'Arthritis', 'asthma': 'Asthma', 'inhaler': 'Asthma', 'hep c': 'Hepatitis C', 'hepatitis': 'Hepatitis', 'liver': 'Liver Disease', 'cirrhosis': 'Cirrhosis', 'alcohol': 'Alcohol', 'drug': 'Alcohol', 'bipolar': 'Bipolar', 'schizo': 'Schizophrenia', 'ptsd': 'PTSD', 'parkinson': 'Parkinson', 'ms ': 'Multiple Sclerosis', 'lupus': 'Lupus', 'sleep apnea': 'Sleep Apnea', 'heart attack': 'Heart Attack', 'myocardial': 'Heart Attack', 'angina': 'Angina', 'aneurysm': 'Aneurysm', 'amput': 'Amputation', 'disability': 'Disability', 'ssdi': 'Disability', 'probation': 'Parole', 'parole': 'Parole', 'jail': 'Jail', 'prison': 'Jail', 'melanoma': 'Melanoma', 'crohn': 'Crohn', 'pancrea': 'Pancreatitis', 'sarcoid': 'Sarcoidosis', 'sickle': 'Sickle Cell', 'autism': 'Autism', 'down syndrome': 'Down', 'cerebral palsy': 'Cerebral Palsy', 'huntington': 'Huntington', 'als': 'ALS', 'tb': 'Tuberculosis', 'tuberculosis': 'Tuberculosis', 'transplant': 'Organ Transplant', 'valve': 'Heart Valve', 'cardiomyopathy': 'Cardiomyopathy', 'stroke': 'Stroke', 'diabet': 'Diabetes', 'depress': 'Depression', 'pad': 'PAD', 'pvd': 'PAD', 'bronchitis': 'Bronchitis', 'fibrosis': 'Pulmonary Fibrosis', 'cystic': 'Cystic Fibrosis', 'black lung': 'Black Lung', 'terminal': 'Terminal Illness', 'hiv': 'AIDS', 'aids': 'AIDS', 'epilep': 'Epilepsy', 'narcotic': 'Chronic Pain', 'angioplasty': 'Angioplasty', 'dvt': 'Blood Clots' };
 
   // ---------- state ----------
   let db = defaults();
   let remote = false, me = null, saveTimer = null;   // remote = served by server/index.js with a login
-  let ui = { clientSel: null, product: null, cheatSearch: '', showAllCols: false, moneyYear: new Date().getFullYear(), bankFilter: 'deposits' };
+  let ui = { clientSel: null, moneyYear: new Date().getFullYear(), bankFilter: 'deposits', quote: { conditions: [] } };
 
   function defaults() {
     return {
@@ -346,7 +349,7 @@
   $('#tabs').addEventListener('click', e => { const b = e.target.closest('.tab'); if (b) showTab(b.dataset.tab); });
 
   function render(name) {
-    ({ dashboard: renderDashboard, clients: renderClients, policies: renderPolicies, money: renderMoney, commissions: renderCommissions, bank: renderBank, cheatsheet: renderCheat }[name] || (() => {}))();
+    ({ dashboard: renderDashboard, clients: renderClients, policies: renderPolicies, money: renderMoney, commissions: renderCommissions, bank: renderBank, quoter: renderQuoter }[name] || (() => {}))();
   }
   function renderAll() { const active = $('.tab.active').dataset.tab; render(active); }
 
@@ -373,6 +376,7 @@
         <div class="field"><label>Phone</label><input name="phone" value="${esc(c.phone)}" type="tel"></div>
         <div class="field"><label>Email</label><input name="email" value="${esc(c.email)}" type="email"></div>
         <div class="field"><label>Date of birth</label><input name="dob" value="${esc(c.dob)}" type="date"></div>
+        <div class="field"><label>Sex</label><select name="sex">${opts(['Female', 'Male'], c.sex, '—')}</select></div>
         <div class="field"><label>State</label><select name="state">${opts(US_STATES, c.state, '—')}</select></div>
         <div class="field"><label>Height (in)</label><input name="height" value="${esc(c.height)}" type="number" min="36" max="96" placeholder="e.g. 68"></div>
         <div class="field"><label>Weight (lb)</label><input name="weight" value="${esc(c.weight)}" type="number" min="50" max="700"></div>
@@ -594,7 +598,7 @@
     if (a === 'email-leads') openEmailLeads(b.dataset.id ? [b.dataset.id] : null);
     if (a === 'email-templates') openTemplates();
     if (a === 'commission-detail') openCommissionDetail(b.dataset.id);
-    if (a === 'quote-client') { const c = clientById(b.dataset.id); showTab('cheatsheet'); if (c && c.height && c.weight) { ui.buildPreset = { h: c.height, w: c.weight }; } }
+    if (a === 'quote-client') { const c = clientById(b.dataset.id); if (c) ui.quote = { clientId: c.id, dob: c.dob || '', sex: c.sex || '', state: c.state || '', height: c.height || '', weight: c.weight || '', tobacco: c.tobacco || 'No', conditions: conditionsFromText(`${c.health || ''} ${c.notes || ''}`), run: true }; showTab('quoter'); }
   });
 
   // ---------- DASHBOARD ----------
@@ -680,7 +684,7 @@
         <dt>Last emailed</dt><dd>${c.lastEmailed ? `${fmtDate(c.lastEmailed)}${c.lastEmailType ? ` <span class="muted">(${esc(c.lastEmailType)})</span>` : ''}` : '—'}${c.lastEmailError ? `<br><span style="color:var(--bad)">Last send failed: ${esc(c.lastEmailError)}</span>` : ''}</dd>
         <dt>Phone</dt><dd>${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : '—'}</dd>
         <dt>Email</dt><dd>${c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : '—'}</dd>
-        <dt>DOB / age</dt><dd>${c.dob ? `${fmtDate(c.dob)} (${ageFromDob(c.dob)})` : '—'}</dd>
+        <dt>DOB / age</dt><dd>${c.dob ? `${fmtDate(c.dob)} (${ageFromDob(c.dob)})` : '—'}${c.sex ? ` · ${esc(c.sex)}` : ''}</dd>
         <dt>State</dt><dd>${esc(c.state || '—')}</dd>
         <dt>Build</dt><dd>${h || c.weight ? `${h} ${c.weight ? c.weight + ' lb' : ''}` : '—'}${c.tobacco === 'Yes' ? ' · <b>Tobacco</b>' : ''}</dd>
         <dt>Source</dt><dd>${esc(c.source || '—')}</dd>
@@ -862,107 +866,157 @@
     });
   }
 
-  // ---------- CHEAT SHEET ----------
-  $$('.pick').forEach(b => b.addEventListener('click', () => { ui.product = b.dataset.product; ui.cheatSearch = ''; renderCheat(); window.scrollTo({ top: $('#cheat-body').offsetTop - 70, behavior: 'smooth' }); }));
-
-  function renderCheat() {
-    $$('.pick').forEach(b => b.classList.toggle('active', b.dataset.product === ui.product));
-    const body = $('#cheat-body');
-    if (!ui.product) { body.innerHTML = '<div class="card intro">👆 Click <b>Term Life</b>, <b>IUL</b> or <b>Whole Life</b> above to load that product\'s carrier cheat sheet.</div>'; return; }
-    const view = PRODUCT_VIEWS[ui.product], G = window.UW_GUIDES[view.guide];
-    const cols = ui.showAllCols ? G.carriers.map((_, i) => i) : view.cols;
-    const q = ui.cheatSearch.trim().toLowerCase();
-    const rows = G.rows.filter(r => !q || r.condition.toLowerCase().includes(q) || cols.some(i => r.cells[i].text.toLowerCase().includes(q)));
-    const hl = s => q ? esc(s).replace(new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'ig'), m => `<span class="hit">${m}</span>`) : esc(s);
-
-    const cards = cols.map(i => G.carriers[i]).map(c => `<div class="carrier-card"><div class="abbr">${esc(c.abbr)}</div><div class="name">${esc(c.name)}</div><div class="prod">${esc(c.product)}</div><ul>${c.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul></div>`).join('');
-    const legend = `<div class="legend">${COLOR_LEGEND.map(([k, l]) => `<span><i style="background:var(--uw-${k})"></i>${esc(l)}</span>`).join('')}</div>`;
-    const thead = `<tr><th>Illness / Condition</th>${cols.map(i => `<th><span class="cn">${esc(G.carriers[i].name)}</span><span class="cp">${esc(G.carriers[i].product)}</span></th>`).join('')}</tr>`;
-    const tbody = rows.map(r => `<tr><td>${hl(r.condition)}</td>${cols.map(i => `<td class="c-${r.cells[i].color}">${hl(r.cells[i].text)}</td>`).join('')}</tr>`).join('');
-    const abbrs = cols.map(i => G.carriers[i].abbr);
-    const charts = G.charts.filter(c => abbrs.includes(c.abbr));
-
-    body.innerHTML = `
-      <div class="card">
-        <div class="card-head"><div><h2>${esc(view.label)} — ${esc(G.title)}</h2><div class="muted">${esc(G.subtitle)} · ${esc(view.blurb)}</div></div>
-          <label class="muted"><input type="checkbox" id="cheat-allcols" ${ui.showAllCols ? 'checked' : ''}> show every carrier in this guide</label></div>
-        <div class="carrier-cards">${cards}</div>
-        <div class="cheat-toolbar">
-          <input type="search" id="cheat-search" placeholder="Search a condition or keyword (e.g. diabetes, COPD, insulin, DUI)…" value="${esc(ui.cheatSearch)}">
-          <span class="muted">${rows.length} of ${G.rows.length} conditions</span>
-          <button class="btn btn-sm" onclick="window.print()">Print</button>
-        </div>
-        ${legend}
-        <div class="uw-wrap"><table class="uw"><thead>${thead}</thead><tbody>${tbody || `<tr><td colspan="${cols.length + 1}" style="padding:20px;color:#9fb3c8">No condition matches "${esc(q)}".</td></tr>`}</tbody></table></div>
-      </div>
-      <details class="section card" open>
-        <summary>Build / height–weight check</summary>
-        <div class="build-tool">
-          <div class="field"><label>Height (ft)</label><input id="b-ft" type="number" min="3" max="7" value="${ui.buildPreset ? Math.floor(ui.buildPreset.h / 12) : 5}"></div>
-          <div class="field"><label>Height (in)</label><input id="b-in" type="number" min="0" max="11" value="${ui.buildPreset ? ui.buildPreset.h % 12 : 8}"></div>
-          <div class="field"><label>Weight (lb)</label><input id="b-wt" type="number" min="50" max="700" value="${ui.buildPreset ? ui.buildPreset.w : ''}" placeholder="lbs"></div>
-          <button class="btn btn-primary" id="b-go">Check build</button>
-          <span class="muted" id="b-bmi"></span>
-        </div>
-        <div class="build-results" id="build-results"></div>
-        <div class="charts">${charts.map(c => chartCard(c)).join('')}</div>
-      </details>
-      <details class="section card">
-        <summary>Product notes & key reminders</summary>
-        <div class="notes-list">${G.notes.map(n => `<div class="note"><b>${esc(n.title)}:</b> ${esc(n.text)}</div>`).join('')}</div>
-      </details>`;
-
-    const si = $('#cheat-search');
-    si.addEventListener('input', () => { ui.cheatSearch = si.value; const pos = si.selectionStart; renderCheat(); const n = $('#cheat-search'); n.focus(); n.setSelectionRange(pos, pos); });
-    $('#cheat-allcols').addEventListener('change', e => { ui.showAllCols = e.target.checked; renderCheat(); });
-    $('#b-go').addEventListener('click', () => runBuild(charts));
-    ['#b-ft', '#b-in', '#b-wt'].forEach(s => $(s).addEventListener('keydown', e => { if (e.key === 'Enter') runBuild(charts); }));
-    if (ui.buildPreset) { runBuild(charts); ui.buildPreset = null; }
+  // ---------- QUOTER ----------
+  // Reads the two underwriting guides and scores every carrier for one person: age band, state, build chart, and each condition's cell color.
+  let CONDITIONS = null;
+  const STOP_TOKENS = new Set(['incl', 'chronic', 'not', 'basal', 'cell', 'currently', 'receiving', 'type', 'coronary', 'disorder', 'disease', 'use', 'criminal', 'psychosis', 'irregular', 'heartbeat', 'kidney', 'the', 'and']);
+  function condTokens(name) { return name.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(t => t && !STOP_TOKENS.has(t)); }
+  function conditionCatalog() {
+    if (CONDITIONS) return CONDITIONS;
+    const G = window.UW_GUIDES, W = G.whole.rows, T = G.term.rows, out = [];
+    const matchIdx = (name, rows) => {
+      const ta = condTokens(name);
+      let best = -1, bestN = 0;
+      rows.forEach((r, i) => { const tb = condTokens(r.condition); const n = ta.filter(t => tb.includes(t)).length; if (n && n >= Math.min(ta.length, tb.length) * 0.6 && n > bestN) { best = i; bestN = n; } });
+      return best;
+    };
+    W.forEach((r, i) => out.push({ name: r.condition, whole: i, term: matchIdx(r.condition, T) }));
+    T.forEach((r, i) => { if (!out.some(c => c.term === i)) out.push({ name: r.condition, whole: -1, term: i }); });
+    out.forEach(c => c.tokens = condTokens(c.name));
+    out.sort((a, b) => a.name.localeCompare(b.name));
+    return (CONDITIONS = out);
   }
-
-  function chartCard(c) {
-    const head = c.headers.length ? `<tr>${c.headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr>` : '';
-    const rows = c.rows.map(r => `<tr data-h="${esc(r[0])}">${r.map(v => `<td>${esc(v)}</td>`).join('')}</tr>`).join('');
-    return `<div class="chart-card" data-abbr="${esc(c.abbr)}"><h3>${esc(c.abbr)} · ${esc(c.title)}</h3><div class="muted" style="margin-bottom:6px">${esc(c.note)}</div>${c.rows.length ? `<table><thead>${head}</thead><tbody>${rows}</tbody></table>` : ''}</div>`;
+  function findCondition(q) { q = q.toLowerCase(); return conditionCatalog().find(c => c.name.toLowerCase().startsWith(q)) || conditionCatalog().find(c => c.name.toLowerCase().includes(q)); }
+  function conditionsFromText(text) {
+    text = ' ' + (text || '').toLowerCase() + ' '; if (!text.trim()) return [];
+    const found = new Set();
+    Object.entries(CONDITION_ALIASES).forEach(([k, v]) => { if (text.includes(k)) { const c = findCondition(v); if (c) found.add(c.name); } });
+    const generic = new Set(['blood', 'heart', 'chest', 'pain', 'driving', 'abuse', 'failure', 'replacement', 'surgery', 'attack', 'syndrome', 'illness', 'clots', 'reckless', 'mental', 'incapacity', 'complications', 'scooter', 'marrow', 'organ', 'artery', 'pressure', 'currently', 'receiving']);
+    conditionCatalog().forEach(c => { if (c.tokens.some(t => t.length >= 5 && !generic.has(t) && text.includes(t))) found.add(c.name); });
+    return Array.from(found);
   }
+  function carrierAges(notes, tobacco) {
+    const txt = notes.join(' · ');
+    const m = /Ages?\s*(\d+)\s*-\s*(\d+)/.exec(txt); if (!m) return null;
+    let lo = +m[1], hi = +m[2];
+    if (tobacco === 'Yes') { const t = /(\d+)\s*-\s*(\d+)\s*T\b/.exec(txt); if (t) { lo = +t[1]; hi = +t[2]; } }
+    return [lo, hi];
+  }
+  function carrierStatesOut(notes) { const m = /Not in ([A-Z]{2}(?:\s*\/\s*[A-Z]{2})*)/.exec(notes.join(' · ')); return m ? m[1].split('/').map(x => x.trim()) : []; }
   function inches(s) { const m = /(\d+)'(\d+)/.exec(s); return m ? +m[1] * 12 + +m[2] : null; }
-  function runBuild(charts) {
-    const ft = +$('#b-ft').value || 0, inn = +$('#b-in').value || 0, wt = +$('#b-wt').value || 0, h = ft * 12 + inn;
-    if (!h || !wt) { $('#build-results').innerHTML = '<div class="muted">Enter height and weight.</div>'; return; }
+  function buildVerdict(c, h, wt) {
+    if (!c) return { cls: 'ok', text: 'no height/weight chart' };
+    if (!c.rows.length) return c.abbr === 'AE' ? { cls: 'ok', text: 'no height/weight chart, any build accepted' } : { cls: 'mid', text: c.note };
+    if (!h || !wt) return { cls: 'mid', text: 'enter height and weight to check the build chart' };
     const bmi = 703 * wt / (h * h);
-    $('#b-bmi').textContent = `${ft}'${inn}" · ${wt} lb · BMI ${bmi.toFixed(1)}`;
-    $$('.chart-card tr.hl').forEach(tr => tr.classList.remove('hl'));
-    const out = charts.map(c => {
-      let verdict = '', cls = 'mid', detail = c.note;
-      if (!c.rows.length) { verdict = c.abbr === 'AE' ? 'No height/weight chart — any build accepted' : 'See chart note'; cls = c.abbr === 'AE' ? 'ok' : 'mid'; }
-      else if (c.headers[0] === 'Tier') {
-        // BMI band chart (Ethos)
-        const band = c.rows.find(r => { const m = /([\d.]+)\s*-\s*([\d.]+)/.exec(r[1]); return m && bmi >= +m[1] && bmi <= +m[2]; });
-        if (band) { verdict = `${band[0]} (BMI ${band[1]}) · max face ${band[2]}`; cls = band[0] === 'Prime' ? 'ok' : 'mid'; highlight(c.abbr, band[0]); }
-        else { verdict = 'DECLINE — BMI outside every band'; cls = 'no'; }
-      } else {
-        // pick exact height row or the nearest row at or below
-        let row = null, rh = -1;
-        c.rows.forEach(r => { const ri = inches(r[0]); if (ri != null && ri <= h && ri > rh) { rh = ri; row = r; } });
-        if (!row) { row = c.rows[0]; rh = inches(row[0]); }
-        highlight(c.abbr, row[0]);
-        const approx = rh !== h ? ` (using ${row[0]} row)` : '';
-        const mins = [], maxes = [];
-        c.headers.forEach((hd, i) => { if (i === 0) return; const v = +row[i]; if (isNaN(v)) return; (/min/i.test(hd) ? mins : maxes).push([hd, v]); });
-        const under = mins.length && wt < Math.min(...mins.map(m => m[1]));
-        if (under) { verdict = `Under minimum weight (${mins.map(m => m[0] + ' ' + m[1]).join(', ')})`; cls = 'no'; }
-        else {
-          const hit = maxes.find(m => wt <= m[1]);
-          if (hit) { verdict = `${hit[0]} (up to ${hit[1]} lb)${approx}`; cls = maxes.indexOf(hit) === 0 ? 'ok' : 'mid'; }
-          else { verdict = `Over max (${maxes[maxes.length - 1][0]} ${maxes[maxes.length - 1][1]} lb)${approx}`; cls = 'no'; }
-        }
-        detail = `${row[0]}: ${c.headers.slice(1).map((hd, i) => hd + ' ' + row[i + 1]).join(' · ')}`;
-      }
-      return `<div class="build-result ${cls}"><b>${esc(c.abbr)} · ${esc(c.title)}</b><div class="verdict">${esc(verdict)}</div><div class="muted">${esc(detail)}</div></div>`;
-    });
-    $('#build-results').innerHTML = out.join('');
+    if (c.headers[0] === 'Tier') {
+      const band = c.rows.find(r => { const m = /([\d.]+)\s*-\s*([\d.]+)/.exec(r[1]); return m && bmi >= +m[1] && bmi <= +m[2]; });
+      return band ? { cls: band[0] === 'Prime' ? 'ok' : 'mid', text: `${band[0]} tier (BMI ${bmi.toFixed(1)}), max face ${band[2]}` } : { cls: 'no', text: `BMI ${bmi.toFixed(1)} is outside every band` };
+    }
+    let row = null, rh = -1;
+    c.rows.forEach(r => { const ri = inches(r[0]); if (ri != null && ri <= h && ri > rh) { rh = ri; row = r; } });
+    if (!row) { row = c.rows[0]; rh = inches(row[0]); }
+    const mins = [], maxes = [];
+    c.headers.forEach((hd, i) => { if (i === 0) return; const v = +row[i]; if (isNaN(v)) return; (/min/i.test(hd) ? mins : maxes).push([hd, v]); });
+    if (mins.length && wt < Math.min(...mins.map(m => m[1]))) return { cls: 'no', text: `under the minimum weight for ${row[0]} (${mins.map(m => m[1]).join(' / ')} lb)` };
+    const hit = maxes.find(m => wt <= m[1]);
+    if (!hit) return { cls: 'no', text: `over the chart max for ${row[0]} (${maxes[maxes.length - 1][1]} lb)` };
+    const first = maxes.indexOf(hit) === 0;
+    return { cls: first ? 'ok' : 'mid', text: first ? `inside the ${maxes.length > 1 ? hit[0] + ' ' : ''}build limit (${row[0]} up to ${hit[1]} lb)` : `${hit[0]} build (${row[0]}: ${maxes.map(m => m[0] + ' ' + m[1]).join(', ')})` };
   }
-  function highlight(abbr, key) { const tr = $(`.chart-card[data-abbr="${abbr}"] tr[data-h="${CSS.escape(key)}"]`); if (tr) tr.classList.add('hl'); }
+  function scoreCarriers(q) {
+    const G = window.UW_GUIDES, age = Number(ageFromDob(q.dob)), h = Number(q.height) || 0, wt = Number(q.weight) || 0;
+    const conds = q.conditions.map(n => conditionCatalog().find(c => c.name === n)).filter(Boolean);
+    const out = [];
+    [['whole', G.whole], ['term', G.term]].forEach(([key, g]) => {
+      g.carriers.forEach((car, i) => {
+        const type = key === 'whole' ? 'Whole Life' : (TERM_COLS.includes(i) && IUL_COLS.includes(i) ? 'Term / IUL' : IUL_COLS.includes(i) ? 'IUL' : 'Term');
+        let level = 4; const lines = [], hard = [];
+        const ages = carrierAges(car.notes, q.tobacco);
+        if (ages && !isNaN(age) && (age < ages[0] || age > ages[1])) { level = 0; hard.push(`age ${age} is outside ${ages[0]}–${ages[1]}${q.tobacco === 'Yes' ? ' (tobacco)' : ''}`); }
+        const outStates = carrierStatesOut(car.notes);
+        if (q.state && outStates.includes(q.state)) { level = 0; hard.push(`not sold in ${q.state}`); }
+        const chart = g.charts.find(c => c.abbr === car.abbr);
+        const b = buildVerdict(chart, h, wt);
+        if (b.cls === 'no') { level = 0; hard.push('build: ' + b.text); } else if (b.cls === 'mid' && h && wt) level = Math.min(level, 3);
+        let greens = 0;
+        conds.forEach(c => {
+          const idx = key === 'whole' ? c.whole : c.term; if (idx < 0) { lines.push({ color: 'none', cond: c.name, text: 'not asked in this guide' }); return; }
+          const cell = g.rows[idx].cells[i]; const rank = COLOR_RANK[cell.color] != null ? COLOR_RANK[cell.color] : 2;
+          level = Math.min(level, rank); if (cell.color === 'green') greens++;
+          lines.push({ color: cell.color, cond: g.rows[idx].condition, text: cell.text });
+        });
+        out.push({ key, car, type, level, hard, lines, build: b, greens, ages, chart });
+      });
+    });
+    out.sort((a, b) => b.level - a.level || b.greens - a.greens || (a.build.cls === 'ok' ? 0 : 1) - (b.build.cls === 'ok' ? 0 : 1) || a.car.name.localeCompare(b.car.name));
+    return out;
+  }
+  function renderQuoter() {
+    const form = $('#q-form'), q = ui.quote || (ui.quote = { conditions: [] });
+    if (!$('#q-state').options.length) $('#q-state').innerHTML = opts(US_STATES, '', '—');
+    form.dob.value = q.dob || ''; form.sex.value = q.sex || ''; form.state.value = q.state || ''; form.tobacco.value = q.tobacco || 'No';
+    form.ft.value = q.height ? Math.floor(q.height / 12) : ''; form.in.value = q.height ? q.height % 12 : ''; form.wt.value = q.weight || '';
+    renderChips();
+    if (q.run) { q.run = false; runQuote(); } else if (!q.results) $('#q-results').innerHTML = '';
+  }
+  function renderChips() {
+    const q = ui.quote;
+    $('#q-chips').innerHTML = q.conditions.map(n => `<span class="chip">${esc(n)}<button type="button" data-remove="${esc(n)}" aria-label="Remove">×</button></span>`).join('') || '<span class="muted">No conditions added: quoting as healthy.</span>';
+    $$('#q-chips [data-remove]').forEach(b => b.addEventListener('click', () => { q.conditions = q.conditions.filter(x => x !== b.dataset.remove); renderChips(); if (q.results) runQuote(); }));
+  }
+  function readQuoteForm() {
+    const form = $('#q-form'), q = ui.quote;
+    q.dob = form.dob.value; q.sex = form.sex.value; q.state = form.state.value; q.tobacco = form.tobacco.value;
+    q.height = (+form.ft.value || 0) * 12 + (+form.in.value || 0); q.weight = +form.wt.value || 0;
+    return q;
+  }
+  function runQuote() {
+    const q = readQuoteForm();
+    if (!q.dob) { $('#q-results').innerHTML = '<div class="card empty">Enter the date of birth to start.</div>'; return; }
+    const results = scoreCarriers(q); q.results = results;
+    const age = ageFromDob(q.dob), bmi = q.height && q.weight ? (703 * q.weight / (q.height * q.height)).toFixed(1) : null;
+    $('#q-summary').textContent = `${age} year old ${q.sex ? q.sex.toLowerCase() : ''}${q.state ? ' in ' + q.state : ''}${bmi ? `, ${Math.floor(q.height / 12)}'${q.height % 12}" ${q.weight} lb (BMI ${bmi})` : ''}${q.tobacco === 'Yes' ? ', tobacco' : ''}${q.conditions.length ? ', ' + q.conditions.length + ' condition' + (q.conditions.length > 1 ? 's' : '') : ', no conditions'}`;
+    const groups = [4, 3, 2, 1, 0].map(l => [l, results.filter(r => r.level === l)]).filter(g => g[1].length);
+    const card = r => `<div class="q-card l${r.level}">
+        <div class="top"><div><span class="name">${esc(r.car.name)}</span> <span class="prod">${esc(r.car.product)}</span></div>${pill(r.type)}</div>
+        <div class="meta">${esc(r.car.notes.slice(0, 2).join(' · '))}</div>
+        <ul>
+          ${r.hard.map(t => `<li><i class="red"></i><span><b>${esc(t)}</b></span></li>`).join('')}
+          ${r.lines.map(l => `<li><i class="${esc(l.color)}"></i><span><b>${esc(l.cond)}: ${esc(COLOR_WORD[l.color] || 'not asked')}</b><span class="rule" title="Click to expand">${esc(l.text)}</span></span></li>`).join('')}
+          ${q.height && q.weight && r.build.cls !== 'no' ? `<li><i class="${r.build.cls === 'ok' ? 'green' : 'yellow'}"></i><span>Build: ${esc(r.build.text)}</span></li>` : ''}
+          ${!r.hard.length && !r.lines.length ? `<li><i class="green"></i><span>Nothing in the guide counts against this client${r.ages ? ` (ages ${r.ages[0]}–${r.ages[1]})` : ''}.</span></li>` : ''}
+        </ul></div>`;
+    $('#q-results').innerHTML = `<div class="q-legend">${results.filter(r => r.level >= 3).length} of ${results.length} carrier products look approvable. Best first. Click a rule to read all of it.</div>` +
+      groups.map(([l, rs]) => `<div class="q-group"><h2>${esc(QUOTE_LEVELS[l][0])} <span class="count">${rs.length} · ${esc(QUOTE_LEVELS[l][1])}</span></h2>${l === 0 ? `<details><summary class="muted" style="cursor:pointer">Show the ${rs.length} unlikely carriers</summary><div class="q-cards" style="margin-top:8px">${rs.map(card).join('')}</div></details>` : `<div class="q-cards">${rs.map(card).join('')}</div>`}</div>`).join('');
+    $$('#q-results .rule').forEach(el => el.addEventListener('click', () => el.classList.toggle('open')));
+  }
+  (function wireQuoter() {
+    const form = $('#q-form'), search = $('#q-cond-search'), list = $('#q-cond-list');
+    let active = 0;
+    const showList = () => {
+      const v = search.value.trim().toLowerCase();
+      if (!v) { list.hidden = true; return; }
+      const q = ui.quote, hits = conditionCatalog().filter(c => !q.conditions.includes(c.name) && (c.name.toLowerCase().includes(v) || c.tokens.some(t => t.startsWith(v)) || Object.entries(CONDITION_ALIASES).some(([k, n]) => k.includes(v) && findCondition(n) === c))).slice(0, 12);
+      active = Math.min(active, Math.max(0, hits.length - 1));
+      list.innerHTML = hits.length ? hits.map((c, i) => `<div data-name="${esc(c.name)}" class="${i === active ? 'active' : ''}">${esc(c.name)}</div>`).join('') : '<div class="none">No condition in the guides matches. Try another word (e.g. "heart", "kidney", "cancer").</div>';
+      list.hidden = false;
+    };
+    const pick = name => { if (!name) return; if (!ui.quote.conditions.includes(name)) ui.quote.conditions.push(name); search.value = ''; list.hidden = true; active = 0; renderChips(); if (ui.quote.results) runQuote(); };
+    search.addEventListener('input', () => { active = 0; showList(); });
+    search.addEventListener('focus', showList);
+    search.addEventListener('keydown', e => {
+      const items = $$('#q-cond-list [data-name]');
+      if (e.key === 'ArrowDown') { active = Math.min(active + 1, items.length - 1); showList(); e.preventDefault(); }
+      else if (e.key === 'ArrowUp') { active = Math.max(active - 1, 0); showList(); e.preventDefault(); }
+      else if (e.key === 'Enter') { e.preventDefault(); if (items[active]) pick(items[active].dataset.name); }
+      else if (e.key === 'Escape') list.hidden = true;
+    });
+    list.addEventListener('mousedown', e => { const d = e.target.closest('[data-name]'); if (d) { e.preventDefault(); pick(d.dataset.name); } });
+    document.addEventListener('click', e => { if (!e.target.closest('.cond-picker')) list.hidden = true; });
+    form.addEventListener('submit', e => { e.preventDefault(); runQuote(); });
+    $('#q-clear').addEventListener('click', () => { ui.quote = { conditions: [] }; form.reset(); renderQuoter(); $('#q-summary').textContent = ''; });
+  })();
 
   // ---------- boot ----------
   (async function boot() {
@@ -975,7 +1029,7 @@
     $('#tab-bank').hidden = !remote; $('#btn-logout').hidden = !remote;
     applyTheme();
     const start = (location.hash || '#dashboard').slice(1);
-    showTab(['dashboard', 'clients', 'policies', 'money', 'commissions', 'bank', 'cheatsheet'].includes(start) ? start : 'dashboard');
+    showTab(['dashboard', 'clients', 'policies', 'money', 'commissions', 'bank', 'quoter'].includes(start) ? start : 'dashboard');
   })();
   $('#btn-logout').addEventListener('click', async () => { await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }); location.href = '/login'; });
 

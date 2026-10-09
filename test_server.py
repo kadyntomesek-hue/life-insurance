@@ -58,7 +58,7 @@ s, _, _, _ = call('POST', '/api/auth/setup', {'username': 'kadyn', 'password': '
 s, _, _, _ = call('POST', '/api/auth/setup', {'username': 'kadyn', 'password': 'correct horse battery'}); check(s == 200, 'setup ok')
 s, _, _, _ = call('POST', '/api/auth/setup', {'username': 'other', 'password': 'correct horse battery'}); check(s == 403, 'second account refused')
 s, j, _, _ = call('GET', '/api/me'); check(j['username'] == 'kadyn', 'me')
-s, _, raw, _ = call('GET', '/'); check(s == 200 and b'Quote Cheat Sheet' in raw, 'index served when signed in')
+s, _, raw, _ = call('GET', '/'); check(s == 200 and b'Quoter' in raw, 'index served when signed in')
 s, _, _, _ = call('GET', '/js/guides-data.js'); check(s == 200, 'guide data served when signed in')
 s, _, _, _ = call('GET', '/../server.py'); check(s in (404, 401, 302), 'no path traversal')
 

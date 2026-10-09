@@ -20,7 +20,7 @@
     <button class="tab" data-tab="money">Money</button>
     <button class="tab" data-tab="commissions">Commissions</button>
     <button class="tab" data-tab="bank" id="tab-bank" hidden>Bank</button>
-    <button class="tab tab-accent" data-tab="cheatsheet">Quote Cheat Sheet</button>
+    <button class="tab tab-accent" data-tab="quoter">Quoter</button>
   </nav>
   <div class="topbar-actions">
     <button class="btn btn-ghost" id="btn-export" title="Download a backup of all your data">Backup</button>
@@ -206,21 +206,32 @@
     </details>
   </section>
 
-  <!-- CHEAT SHEET -->
-  <section class="view" id="view-cheatsheet">
+  <!-- QUOTER -->
+  <section class="view" id="view-quoter">
     <div class="view-head">
-      <h1>Quote Cheat Sheet</h1>
-      <span class="muted">Underwriting grids, updated 2026. For producer use only. Always confirm the live e-app decision.</span>
+      <h1>Quoter</h1>
+      <span class="muted">Type the client in and get the carriers most likely to approve them. Guides updated 2026; always confirm with the live e-app.</span>
     </div>
-    <div class="product-picker card">
-      <div class="picker-label">Click a product to quote: <strong>Term Life</strong>, <strong>IUL</strong>, or <strong>Whole Life</strong></div>
-      <div class="picker-buttons">
-        <button class="pick" data-product="term">Term Life</button>
-        <button class="pick" data-product="iul">IUL</button>
-        <button class="pick" data-product="whole">Whole Life</button>
-      </div>
+    <div class="card">
+      <form id="q-form" class="quote-grid">
+        <div class="field"><label>Date of birth</label><input name="dob" type="date" required></div>
+        <div class="field"><label>Sex</label><select name="sex"><option value="">—</option><option>Female</option><option>Male</option></select></div>
+        <div class="field"><label>State</label><select name="state" id="q-state"></select></div>
+        <div class="field"><label>Height</label><div class="hw"><input name="ft" type="number" min="3" max="7" placeholder="ft"><input name="in" type="number" min="0" max="11" placeholder="in"></div></div>
+        <div class="field"><label>Weight (lb)</label><input name="wt" type="number" min="50" max="700" placeholder="lb"></div>
+        <div class="field"><label>Tobacco</label><select name="tobacco"><option>No</option><option>Yes</option></select></div>
+        <div class="field full">
+          <label>Health conditions</label>
+          <div class="cond-picker">
+            <input id="q-cond-search" type="search" autocomplete="off" placeholder="Type a condition (diabetes, COPD, stroke, DUI…) and pick it from the list. Leave empty if healthy.">
+            <div id="q-cond-list" class="cond-list" hidden></div>
+          </div>
+          <div id="q-chips" class="chips"></div>
+        </div>
+        <div class="form-actions full"><span class="muted" id="q-summary"></span><div class="right"><button type="button" class="btn" id="q-clear">Clear</button><button class="btn btn-primary">Find carriers</button></div></div>
+      </form>
     </div>
-    <div id="cheat-body" class="cheat-body"></div>
+    <div id="q-results"></div>
   </section>
 </main>
 
