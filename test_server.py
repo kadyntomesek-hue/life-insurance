@@ -54,6 +54,8 @@ s, j, _, _ = call('GET', '/api/auth/status'); check(j['setupNeeded'], 'fresh ins
 s, _, _, loc = call('GET', '/'); check(s == 302 and loc == '/login', 'index redirects to login when signed out')
 s, _, _, _ = call('GET', '/api/data'); check(s == 401, 'api locked when signed out')
 s, _, _, _ = call('GET', '/js/guides-data.js'); check(s == 401, 'guide data locked when signed out')
+s, _, raw, _ = call('GET', '/manifest.webmanifest'); check(s == 200 and b'Life Insurance CRM' in raw, 'manifest is public')
+s, _, _, _ = call('GET', '/icon.svg'); check(s == 200, 'icon is public')
 s, _, _, _ = call('POST', '/api/auth/setup', {'username': 'kadyn', 'password': 'short'}); check(s == 400, 'rejects short password')
 s, _, _, _ = call('POST', '/api/auth/setup', {'username': 'kadyn', 'password': 'correct horse battery'}); check(s == 200, 'setup ok')
 s, _, _, _ = call('POST', '/api/auth/setup', {'username': 'other', 'password': 'correct horse battery'}); check(s == 403, 'second account refused')

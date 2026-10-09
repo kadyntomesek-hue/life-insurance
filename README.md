@@ -27,8 +27,45 @@ password under Settings.
 Everything is stored as JSON files in `data/` next to `server.py` (set `DATA_DIR` in `.env` to move it). Back that
 folder up, or use the Backup button in the app. `python test_server.py` runs a quick self-test.
 
-To use it from your phone or outside your house, run it on a small host that has Python (a $5 VPS, PythonAnywhere,
-Render, Railway) behind HTTPS, and set `COOKIE_SECURE=true` in `.env`.
+To use it from your phone or outside your house, put it online: see **Put it online** below.
+
+## Put it online (phone access)
+
+The repo ships a `Dockerfile` and ready-made configs, so any host that runs containers works. Your data lives on a
+small persistent disk mounted at `/data`; nothing is stored on the host's temporary filesystem.
+
+**Railway (easiest, about $5/month).**
+
+1. Push this repo to GitHub (it probably already is).
+2. At railway.com: **New project → Deploy from GitHub repo**, pick this repo. It builds from the `Dockerfile` on its own.
+3. In the service: **Settings → Volumes → Add volume**, mount path `/data`.
+4. **Variables**: add `SESSION_SECRET` (any long random string). `DATA_DIR`, `COOKIE_SECURE` and `TRUST_PROXY` are
+   already set by the Dockerfile. Add `SMTP_*` and `ANTHROPIC_API_KEY` here too if you want email and AI (same names as
+   `.env.example`). Never commit those to GitHub.
+5. **Settings → Networking → Generate domain**. Open that address, create your login, done. Every push to the branch
+   Railway watches redeploys it; your data on the volume is kept.
+
+**Fly.io.** Install `flyctl`, then in the repo folder: `fly launch --copy-config --no-deploy` (pick a name and region),
+`fly volumes create data --size 1`, `fly secrets set SESSION_SECRET=...` (plus SMTP / API key secrets), `fly deploy`.
+`fly.toml` already maps the volume to `/data` and forces HTTPS.
+
+**Render.** **New + → Blueprint**, pick the repo; `render.yaml` sets up the service and a 1 GB disk at `/data`. A
+persistent disk needs the Starter plan (about $7/month); the free plan wipes the disk on every deploy, so do not use it
+for real data.
+
+**Your own VPS.** Install Docker, then `docker run -d --restart unless-stopped -p 3000:3000 -v crm-data:/data
+-e SESSION_SECRET=... $(docker build -q .)` and put Caddy or nginx in front for HTTPS (Caddy does it with one line:
+`your.domain { reverse_proxy localhost:3000 }`).
+
+Whichever host: `COOKIE_SECURE=true` means the login cookie only travels over HTTPS (every host above gives you HTTPS),
+and `TRUST_PROXY=1` lets the 5-tries lockout see the real visitor address instead of the host's proxy.
+
+**On your phone.** Open the address in Safari (iPhone) or Chrome (Android), sign in, then **Share → Add to Home
+Screen** (iPhone) or **menu ⋮ → Add to Home screen / Install app** (Android). It opens full-screen like an app and
+stays signed in for 12 hours (`SESSION_HOURS` changes that).
+
+**Backups.** The Backup button downloads everything as one JSON file; do that now and then, or snapshot the volume on
+the host. Moving hosts = restore that file.
 
 ## Bank tab
 
@@ -142,6 +179,7 @@ payments are shown but not counted against the expected amount. Differences of $
 - `index.html`, `login.html`, `css/app.css`, `js/app.js` – the app.
 - `js/guides-data.js` – underwriting grids, build charts and notes extracted from the two PDFs.
 - `server.py` – the portal server (login, data files, bank matching, Plaid, email sending, AI lead analysis). `start.bat` / `start.sh` launch it.
+- `Dockerfile`, `railway.json`, `render.yaml`, `fly.toml` – hosting configs (see **Put it online**). `manifest.webmanifest` / `icon.svg` – home-screen app icon.
 - `tools/parse_guides.py` – rebuilds `guides-data.js` from new guide PDFs (needs poppler's `pdftotext`/`pdftoppm`).
 - `test_server.py` – server self-test.
 

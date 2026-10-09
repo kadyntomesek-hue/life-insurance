@@ -658,6 +658,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._file('login.html')
         if path.startswith('/css/') and method == 'GET':
             return self._file(path.lstrip('/'))
+        if path in ('/manifest.webmanifest', '/icon.svg') and method == 'GET':
+            return self._file(path.lstrip('/'))
 
         # ---- everything below needs a login ----
         s = self._session()
