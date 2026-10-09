@@ -125,8 +125,10 @@ payments are shown but not counted against the expected amount. Differences of $
   an **Owed to me** list of issued/paid policies whose advance hasn't been fully logged.
 - **Commissions** – see above: expected vs received per policy and per carrier, chargeback watch, what's coming up.
 - **Bank** – see above (portal only).
-- **Quoter** – type in date of birth, sex, state, height, weight, tobacco and the health conditions (start typing and
-  pick from the guides' A–Z list) and it scores all 17 carrier products from both underwriting guides: age band and
+- **Quoter** – type in date of birth, sex, state, height, weight, tobacco, and the meds and conditions in plain words
+  ("metformin, lisinopril, cpap, stent 2019, afib on eliquis"). It recognizes several hundred medication and condition
+  names, shows what it picked up (click × on a wrong one) and flags meds that are not rated. Then it scores all 17
+  carrier products from both underwriting guides: age band and
   tobacco band from the carrier notes, "not sold in" states, the carrier's height/weight chart, and the color of every
   selected condition's cell. Carriers come back in five groups, best first: **Most likely to approve** (level,
   day-one), **Likely, graded or modified tier**, **Possible, depends on the details**, **Only a guaranteed-issue

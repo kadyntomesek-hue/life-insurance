@@ -221,11 +221,8 @@
         <div class="field"><label>Weight (lb)</label><input name="wt" type="number" min="50" max="700" placeholder="lb"></div>
         <div class="field"><label>Tobacco</label><select name="tobacco"><option>No</option><option>Yes</option></select></div>
         <div class="field full">
-          <label>Health conditions</label>
-          <div class="cond-picker">
-            <input id="q-cond-search" type="search" autocomplete="off" placeholder="Type a condition (diabetes, COPD, stroke, DUI…) and pick it from the list. Leave empty if healthy.">
-            <div id="q-cond-list" class="cond-list" hidden></div>
-          </div>
+          <label>Health conditions and medications (just type them)</label>
+          <textarea id="q-health" rows="2" placeholder="e.g. metformin, lisinopril, cpap, had a stent in 2019, afib on eliquis. Leave empty if healthy."></textarea>
           <div id="q-chips" class="chips"></div>
         </div>
         <div class="form-actions full"><span class="muted" id="q-summary"></span><div class="right"><button type="button" class="btn" id="q-clear">Clear</button><button class="btn btn-primary">Find carriers</button></div></div>

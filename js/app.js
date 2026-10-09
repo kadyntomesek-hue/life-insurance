@@ -53,8 +53,37 @@
     ['Likely, graded or modified tier', 'approved, but at a graded / modified / rated class'],
     ['Most likely to approve', 'level, day-one coverage at the best class']
   ];
-  // Words in the client's health notes that point to a condition in the guides.
-  const CONDITION_ALIASES = { insulin: 'Diabetes', metformin: 'Diabetes', a1c: 'Diabetes', sugar: 'Diabetes', hypertension: 'High Blood Pressure', 'blood pressure': 'High Blood Pressure', lisinopril: 'High Blood Pressure', cpap: 'Sleep Apnea', 'heart failure': 'CHF', 'congestive': 'CHF', 'a-fib': 'AFib', 'atrial': 'AFib', 'bypass': 'Heart Surgery', cabg: 'Heart Surgery', 'kidney': 'Kidney Disease', 'renal': 'Kidney Disease', 'dialysis': 'Dialysis', 'oxygen': 'Oxygen Use', 'o2': 'Oxygen Use', 'copd': 'COPD', 'emphysema': 'Emphysema', 'seizure': 'Epilepsy', 'tia': 'Stroke', 'mini stroke': 'Stroke', 'dementia': 'Alzheimer', 'felony': 'Felony', 'dui': 'DUI', 'dwi': 'DUI', 'wheelchair': 'Wheelchair', 'obese': 'Obesity', 'overweight': 'Obesity', 'anxiety': 'Anxiety', 'xanax': 'Anxiety', 'prozac': 'Depression', 'zoloft': 'Depression', 'lexapro': 'Depression', 'opioid': 'Chronic Pain', 'oxycodone': 'Chronic Pain', 'hydrocodone': 'Chronic Pain', 'pain pills': 'Chronic Pain', 'cancer': 'Cancer', 'chemo': 'Cancer', 'stent': 'Stent', 'pacemaker': 'Pacemaker', 'defibrillator': 'Pacemaker', 'blood clot': 'Blood Clots', 'eliquis': 'AFib', 'xarelto': 'AFib', 'warfarin': 'Blood Clots', 'neuropathy': 'Neuropathy', 'arthritis': 'Arthritis', 'asthma': 'Asthma', 'inhaler': 'Asthma', 'hep c': 'Hepatitis C', 'hepatitis': 'Hepatitis', 'liver': 'Liver Disease', 'cirrhosis': 'Cirrhosis', 'alcohol': 'Alcohol', 'drug': 'Alcohol', 'bipolar': 'Bipolar', 'schizo': 'Schizophrenia', 'ptsd': 'PTSD', 'parkinson': 'Parkinson', 'ms ': 'Multiple Sclerosis', 'lupus': 'Lupus', 'sleep apnea': 'Sleep Apnea', 'heart attack': 'Heart Attack', 'myocardial': 'Heart Attack', 'angina': 'Angina', 'aneurysm': 'Aneurysm', 'amput': 'Amputation', 'disability': 'Disability', 'ssdi': 'Disability', 'probation': 'Parole', 'parole': 'Parole', 'jail': 'Jail', 'prison': 'Jail', 'melanoma': 'Melanoma', 'crohn': 'Crohn', 'pancrea': 'Pancreatitis', 'sarcoid': 'Sarcoidosis', 'sickle': 'Sickle Cell', 'autism': 'Autism', 'down syndrome': 'Down', 'cerebral palsy': 'Cerebral Palsy', 'huntington': 'Huntington', 'als': 'ALS', 'tb': 'Tuberculosis', 'tuberculosis': 'Tuberculosis', 'transplant': 'Organ Transplant', 'valve': 'Heart Valve', 'cardiomyopathy': 'Cardiomyopathy', 'stroke': 'Stroke', 'diabet': 'Diabetes', 'depress': 'Depression', 'pad': 'PAD', 'pvd': 'PAD', 'bronchitis': 'Bronchitis', 'fibrosis': 'Pulmonary Fibrosis', 'cystic': 'Cystic Fibrosis', 'black lung': 'Black Lung', 'terminal': 'Terminal Illness', 'hiv': 'AIDS', 'aids': 'AIDS', 'epilep': 'Epilepsy', 'narcotic': 'Chronic Pain', 'angioplasty': 'Angioplasty', 'dvt': 'Blood Clots' };
+  // Words, meds and slang in a client's health notes that point to a condition in the guides. Keys are matched at a word start.
+  const CONDITION_ALIASES = {
+    // diabetes
+    insulin: 'Diabetes', metformin: 'Diabetes', glucophage: 'Diabetes', a1c: 'Diabetes', 'blood sugar': 'Diabetes', diabet: 'Diabetes', glipizide: 'Diabetes', glyburide: 'Diabetes', glimepiride: 'Diabetes', januvia: 'Diabetes', janumet: 'Diabetes', sitagliptin: 'Diabetes', jardiance: 'Diabetes', empagliflozin: 'Diabetes', farxiga: 'Diabetes', dapagliflozin: 'Diabetes', invokana: 'Diabetes', ozempic: 'Diabetes', rybelsus: 'Diabetes', semaglutide: 'Diabetes', trulicity: 'Diabetes', dulaglutide: 'Diabetes', victoza: 'Diabetes', liraglutide: 'Diabetes', mounjaro: 'Diabetes', tirzepatide: 'Diabetes', lantus: 'Diabetes', humalog: 'Diabetes', novolog: 'Diabetes', levemir: 'Diabetes', tresiba: 'Diabetes', humulin: 'Diabetes', novolin: 'Diabetes', actos: 'Diabetes', pioglitazone: 'Diabetes', basaglar: 'Diabetes', toujeo: 'Diabetes',
+    neuropathy: 'Neuropathy', gabapentin: 'Neuropathy', neurontin: 'Neuropathy', lyrica: 'Neuropathy', pregabalin: 'Neuropathy', retinopathy: 'Diabetic Complications', 'diabetic complications': 'Diabetic Complications',
+    // blood pressure / heart
+    hypertension: 'High Blood Pressure', 'blood pressure': 'High Blood Pressure', 'high bp': 'High Blood Pressure', lisinopril: 'High Blood Pressure', losartan: 'High Blood Pressure', amlodipine: 'High Blood Pressure', norvasc: 'High Blood Pressure', metoprolol: 'High Blood Pressure', atenolol: 'High Blood Pressure', hydrochlorothiazide: 'High Blood Pressure', hctz: 'High Blood Pressure', valsartan: 'High Blood Pressure', olmesartan: 'High Blood Pressure', benazepril: 'High Blood Pressure', enalapril: 'High Blood Pressure', ramipril: 'High Blood Pressure', carvedilol: 'High Blood Pressure', coreg: 'High Blood Pressure', diltiazem: 'High Blood Pressure', nifedipine: 'High Blood Pressure', clonidine: 'High Blood Pressure', hydralazine: 'High Blood Pressure', spironolactone: 'High Blood Pressure', propranolol: 'High Blood Pressure', irbesartan: 'High Blood Pressure', telmisartan: 'High Blood Pressure', chlorthalidone: 'High Blood Pressure', bisoprolol: 'High Blood Pressure',
+    'heart failure': 'CHF', congestive: 'CHF', chf: 'CHF', entresto: 'CHF', furosemide: 'CHF', lasix: 'CHF', 'ejection fraction': 'CHF',
+    afib: 'AFib', 'a-fib': 'AFib', 'a fib': 'AFib', atrial: 'AFib', arrhythmia: 'AFib', 'irregular heart': 'AFib', amiodarone: 'AFib', digoxin: 'AFib', eliquis: 'AFib', apixaban: 'AFib', xarelto: 'AFib', rivaroxaban: 'AFib', pradaxa: 'AFib', flecainide: 'AFib', sotalol: 'AFib',
+    'heart attack': 'Heart Attack', myocardial: 'Heart Attack', 'mi ': 'Heart Attack', angina: 'Angina', nitroglycerin: 'Angina', nitro: 'Angina', 'chest pain': 'Angina', stent: 'Stent', plavix: 'Stent', clopidogrel: 'Stent', brilinta: 'Stent', effient: 'Stent', angioplasty: 'Angioplasty', bypass: 'Heart Surgery', cabg: 'Heart Surgery', 'open heart': 'Heart Surgery', valve: 'Heart Valve', cardiomyopathy: 'Cardiomyopathy', 'enlarged heart': 'Cardiomyopathy', pacemaker: 'Pacemaker', defibrillator: 'Pacemaker', icd: 'Pacemaker', 'coronary artery': 'Coronary Artery Disease', cad: 'Coronary Artery Disease', 'blocked arter': 'Coronary Artery Disease', 'blockage': 'Coronary Artery Disease', aneurysm: 'Aneurysm',
+    'blood clot': 'Blood Clots', dvt: 'Blood Clots', 'pulmonary embolism': 'Blood Clots', warfarin: 'Blood Clots', coumadin: 'Blood Clots', pad: 'PAD', pvd: 'PAD', 'peripheral arter': 'PAD', 'poor circulation': 'PAD',
+    stroke: 'Stroke', tia: 'Stroke', 'mini stroke': 'Stroke', 'mini-stroke': 'Stroke',
+    // lungs
+    copd: 'COPD', emphysema: 'Emphysema', 'chronic bronchitis': 'Bronchitis', bronchitis: 'Bronchitis', spiriva: 'COPD', tiotropium: 'COPD', trelegy: 'COPD', anoro: 'COPD', symbicort: 'COPD', advair: 'COPD', breo: 'COPD', daliresp: 'COPD', asthma: 'Asthma', albuterol: 'Asthma', ventolin: 'Asthma', proair: 'Asthma', singulair: 'Asthma', montelukast: 'Asthma', inhaler: 'Asthma', nebulizer: 'COPD', oxygen: 'Oxygen Use', o2: 'Oxygen Use', 'sleep apnea': 'Sleep Apnea', apnea: 'Sleep Apnea', cpap: 'Sleep Apnea', bipap: 'Sleep Apnea', 'pulmonary fibrosis': 'Pulmonary Fibrosis', sarcoid: 'Sarcoidosis', 'black lung': 'Black Lung', 'cystic fibrosis': 'Cystic Fibrosis', tuberculosis: 'Tuberculosis', 'tb ': 'Tuberculosis',
+    // kidney / liver / gi
+    kidney: 'Kidney Disease', renal: 'Kidney Disease', ckd: 'Kidney Disease', dialysis: 'Dialysis', liver: 'Liver Disease', cirrhosis: 'Cirrhosis', 'fatty liver': 'Liver Disease', 'hep c': 'Hepatitis C', 'hep b': 'Hepatitis B', 'hep a': 'Hepatitis A', hepatitis: 'Hepatitis', harvoni: 'Hepatitis C', epclusa: 'Hepatitis C', mavyret: 'Hepatitis C', pancrea: 'Pancreatitis', crohn: 'Crohn', 'ulcerative colitis': 'Crohn',
+    // cancer / immune
+    cancer: 'Cancer', chemo: 'Cancer', radiation: 'Cancer', tumor: 'Cancer', lymphoma: 'Cancer', leukemia: 'Cancer', tamoxifen: 'Cancer', anastrozole: 'Cancer', arimidex: 'Cancer', letrozole: 'Cancer', melanoma: 'Melanoma', hiv: 'AIDS', aids: 'AIDS', truvada: 'AIDS', biktarvy: 'AIDS', genvoya: 'AIDS', descovy: 'AIDS', lupus: 'Lupus', 'multiple sclerosis': 'Multiple Sclerosis', 'ms ': 'Multiple Sclerosis', tecfidera: 'Multiple Sclerosis', copaxone: 'Multiple Sclerosis', ocrevus: 'Multiple Sclerosis', 'rheumatoid': 'Arthritis', arthritis: 'Arthritis', methotrexate: 'Arthritis', humira: 'Arthritis', enbrel: 'Arthritis', 'sickle cell': 'Sickle Cell', transplant: 'Organ Transplant', 'bone marrow': 'Bone Marrow Transplant',
+    // neuro / mental
+    seizure: 'Epilepsy', epilep: 'Epilepsy', keppra: 'Epilepsy', levetiracetam: 'Epilepsy', dilantin: 'Epilepsy', phenytoin: 'Epilepsy', tegretol: 'Epilepsy', carbamazepine: 'Epilepsy', dementia: 'Alzheimer', alzheimer: 'Alzheimer', aricept: 'Alzheimer', donepezil: 'Alzheimer', namenda: 'Alzheimer', memantine: 'Alzheimer', 'memory loss': 'Alzheimer', parkinson: 'Parkinson', sinemet: 'Parkinson', carbidopa: 'Parkinson', levodopa: 'Parkinson', ropinirole: 'Parkinson', huntington: 'Huntington', 'als ': 'ALS', 'lou gehrig': 'ALS', 'muscular dystrophy': 'Muscular Dystrophy', 'cerebral palsy': 'Cerebral Palsy', 'down syndrome': 'Down', "down's": 'Down', autism: 'Autism',
+    depress: 'Depression', sertraline: 'Depression', zoloft: 'Depression', fluoxetine: 'Depression', prozac: 'Depression', escitalopram: 'Depression', lexapro: 'Depression', citalopram: 'Depression', celexa: 'Depression', paroxetine: 'Depression', paxil: 'Depression', bupropion: 'Depression', wellbutrin: 'Depression', trazodone: 'Depression', venlafaxine: 'Depression', effexor: 'Depression', duloxetine: 'Depression', cymbalta: 'Depression', mirtazapine: 'Depression', remeron: 'Depression',
+    anxiety: 'Anxiety', 'panic attack': 'Anxiety', alprazolam: 'Anxiety', xanax: 'Anxiety', lorazepam: 'Anxiety', ativan: 'Anxiety', clonazepam: 'Anxiety', klonopin: 'Anxiety', buspirone: 'Anxiety', buspar: 'Anxiety', diazepam: 'Anxiety', valium: 'Anxiety', hydroxyzine: 'Anxiety',
+    bipolar: 'Bipolar', lithium: 'Bipolar', lamictal: 'Bipolar', lamotrigine: 'Bipolar', depakote: 'Bipolar', seroquel: 'Bipolar', quetiapine: 'Bipolar', abilify: 'Bipolar', aripiprazole: 'Bipolar', schizo: 'Schizophrenia', risperdal: 'Schizophrenia', risperidone: 'Schizophrenia', zyprexa: 'Schizophrenia', olanzapine: 'Schizophrenia', haldol: 'Schizophrenia', clozapine: 'Schizophrenia', ptsd: 'PTSD', 'mental incapac': 'Mental Incapacity', 'power of attorney': 'Mental Incapacity',
+    // pain / substance / lifestyle
+    'chronic pain': 'Chronic Pain', opioid: 'Chronic Pain', narcotic: 'Chronic Pain', oxycodone: 'Chronic Pain', oxycontin: 'Chronic Pain', hydrocodone: 'Chronic Pain', norco: 'Chronic Pain', vicodin: 'Chronic Pain', percocet: 'Chronic Pain', morphine: 'Chronic Pain', fentanyl: 'Chronic Pain', tramadol: 'Chronic Pain', methadone: 'Chronic Pain', 'pain pill': 'Chronic Pain', 'pain management': 'Chronic Pain',
+    alcohol: 'Alcohol', 'drug abuse': 'Alcohol', 'drug use': 'Alcohol', 'drugs': 'Alcohol', rehab: 'Alcohol', suboxone: 'Alcohol', buprenorphine: 'Alcohol', naltrexone: 'Alcohol', antabuse: 'Alcohol', 'aa meetings': 'Alcohol', meth: 'Illegal Drug Use', cocaine: 'Illegal Drug Use', heroin: 'Illegal Drug Use', marijuana: 'Illegal Drug Use', weed: 'Illegal Drug Use',
+    dui: 'DUI', dwi: 'DUI', 'reckless': 'DUI', 'license suspended': 'DUI', felony: 'Felony', 'felon': 'Felony', probation: 'Parole', parole: 'Parole', jail: 'Jail', prison: 'Jail', incarcerat: 'Jail',
+    wheelchair: 'Wheelchair', scooter: 'Wheelchair', walker: 'Wheelchair', 'bed bound': 'Wheelchair', bedridden: 'Wheelchair', disability: 'Disability', ssdi: 'Disability', ssi: 'Disability', 'disabled': 'Disability', amput: 'Amputation', obes: 'Obesity', overweight: 'Obesity', bariatric: 'Obesity', 'gastric bypass': 'Obesity', 'gastric sleeve': 'Obesity', terminal: 'Terminal Illness', hospice: 'Terminal Illness', 'nursing home': 'Mental Incapacity'
+  };
+  // Common meds and words that are not underwriting conditions in these guides; shown as "seen, not rated" so the agent knows they were read.
+  const NOT_RATED = ['atorvastatin', 'lipitor', 'simvastatin', 'zocor', 'rosuvastatin', 'crestor', 'pravastatin', 'cholesterol', 'levothyroxine', 'synthroid', 'thyroid', 'omeprazole', 'prilosec', 'pantoprazole', 'protonix', 'nexium', 'acid reflux', 'gerd', 'allopurinol', 'gout', 'tamsulosin', 'flomax', 'finasteride', 'vitamin', 'aspirin', 'baby aspirin', 'ibuprofen', 'tylenol', 'meloxicam', 'allergies', 'zyrtec', 'claritin', 'flonase', 'metformin er', 'eye drops', 'glasses', 'hearing aid', 'osteoporosis', 'fosamax', 'alendronate', 'migraine', 'sumatriptan', 'ambien', 'melatonin', 'viagra', 'cialis', 'birth control', 'estrogen', 'premarin', 'testosterone', 'eczema', 'psoriasis', 'anemia', 'iron', 'b12', 'back pain', 'knee', 'hip replacement', 'cataract', 'glaucoma', 'high cholesterol', 'prediabetes', 'pre-diabetes', 'nicotine', 'chantix', 'nicotine patch', 'smok', 'vape', 'cigar'];
 
   // ---------- state ----------
   let db = defaults();
@@ -598,7 +627,7 @@
     if (a === 'email-leads') openEmailLeads(b.dataset.id ? [b.dataset.id] : null);
     if (a === 'email-templates') openTemplates();
     if (a === 'commission-detail') openCommissionDetail(b.dataset.id);
-    if (a === 'quote-client') { const c = clientById(b.dataset.id); if (c) ui.quote = { clientId: c.id, dob: c.dob || '', sex: c.sex || '', state: c.state || '', height: c.height || '', weight: c.weight || '', tobacco: c.tobacco || 'No', conditions: conditionsFromText(`${c.health || ''} ${c.notes || ''}`), run: true }; showTab('quoter'); }
+    if (a === 'quote-client') { const c = clientById(b.dataset.id); if (c) ui.quote = { clientId: c.id, dob: c.dob || '', sex: c.sex || '', state: c.state || '', height: c.height || '', weight: c.weight || '', tobacco: c.tobacco || 'No', health: [c.health, c.notes].filter(Boolean).join('. '), excluded: [], conditions: [], run: true }; showTab('quoter'); }
   });
 
   // ---------- DASHBOARD ----------
@@ -887,14 +916,20 @@
     return (CONDITIONS = out);
   }
   function findCondition(q) { q = q.toLowerCase(); return conditionCatalog().find(c => c.name.toLowerCase().startsWith(q)) || conditionCatalog().find(c => c.name.toLowerCase().includes(q)); }
-  function conditionsFromText(text) {
-    text = ' ' + (text || '').toLowerCase() + ' '; if (!text.trim()) return [];
-    const found = new Set();
-    Object.entries(CONDITION_ALIASES).forEach(([k, v]) => { if (text.includes(k)) { const c = findCondition(v); if (c) found.add(c.name); } });
-    const generic = new Set(['blood', 'heart', 'chest', 'pain', 'driving', 'abuse', 'failure', 'replacement', 'surgery', 'attack', 'syndrome', 'illness', 'clots', 'reckless', 'mental', 'incapacity', 'complications', 'scooter', 'marrow', 'organ', 'artery', 'pressure', 'currently', 'receiving']);
-    conditionCatalog().forEach(c => { if (c.tokens.some(t => t.length >= 5 && !generic.has(t) && text.includes(t))) found.add(c.name); });
-    return Array.from(found);
+  function esc_re(k) { return k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+  function parseHealth(text) {
+    // Returns { found: [{name, via}], notRated: [words] } from free text like "metformin, lisinopril, cpap, stent 2019".
+    const t = ' ' + (text || '').toLowerCase().replace(/[’']/g, "'") + ' ';
+    const found = new Map(), notRated = [];
+    if (!t.trim()) return { found: [], notRated };
+    const hit = k => new RegExp((k.length <= 3 ? '\\b' + esc_re(k) + '\\b' : '\\b' + esc_re(k))).test(t);
+    Object.entries(CONDITION_ALIASES).forEach(([k, v]) => { if (hit(k)) { const c = findCondition(v); if (c && !found.has(c.name)) found.set(c.name, k.trim()); } });
+    const generic = new Set(['blood', 'heart', 'chest', 'pain', 'driving', 'abuse', 'failure', 'replacement', 'surgery', 'attack', 'syndrome', 'illness', 'clots', 'reckless', 'mental', 'incapacity', 'complications', 'scooter', 'marrow', 'organ', 'artery', 'pressure', 'currently', 'receiving', 'disease', 'chronic']);
+    conditionCatalog().forEach(c => { if (!found.has(c.name)) { const tok = c.tokens.find(x => x.length >= 5 && !generic.has(x) && hit(x)); if (tok) found.set(c.name, tok); } });
+    NOT_RATED.forEach(k => { if (hit(k)) notRated.push(k); });
+    return { found: Array.from(found, ([name, via]) => ({ name, via })), notRated };
   }
+  function conditionsFromText(text) { return parseHealth(text).found.map(f => f.name); }
   function carrierAges(notes, tobacco) {
     const txt = notes.join(' · ');
     const m = /Ages?\s*(\d+)\s*-\s*(\d+)/.exec(txt); if (!m) return null;
@@ -953,17 +988,25 @@
     return out;
   }
   function renderQuoter() {
-    const form = $('#q-form'), q = ui.quote || (ui.quote = { conditions: [] });
+    const form = $('#q-form'), q = ui.quote || (ui.quote = { conditions: [], excluded: [] });
+    q.excluded = q.excluded || [];
     if (!$('#q-state').options.length) $('#q-state').innerHTML = opts(US_STATES, '', '—');
     form.dob.value = q.dob || ''; form.sex.value = q.sex || ''; form.state.value = q.state || ''; form.tobacco.value = q.tobacco || 'No';
     form.ft.value = q.height ? Math.floor(q.height / 12) : ''; form.in.value = q.height ? q.height % 12 : ''; form.wt.value = q.weight || '';
-    renderChips();
+    $('#q-health').value = q.health || '';
+    syncConditions();
     if (q.run) { q.run = false; runQuote(); } else if (!q.results) $('#q-results').innerHTML = '';
   }
-  function renderChips() {
-    const q = ui.quote;
-    $('#q-chips').innerHTML = q.conditions.map(n => `<span class="chip">${esc(n)}<button type="button" data-remove="${esc(n)}" aria-label="Remove">×</button></span>`).join('') || '<span class="muted">No conditions added: quoting as healthy.</span>';
-    $$('#q-chips [data-remove]').forEach(b => b.addEventListener('click', () => { q.conditions = q.conditions.filter(x => x !== b.dataset.remove); renderChips(); if (q.results) runQuote(); }));
+  function syncConditions() {
+    // Re-read the health text, turn it into conditions (minus any the agent removed), and show them as chips.
+    const q = ui.quote, parsed = parseHealth($('#q-health').value);
+    q.health = $('#q-health').value;
+    q.found = parsed.found.filter(f => !q.excluded.includes(f.name));
+    q.conditions = q.found.map(f => f.name);
+    $('#q-chips').innerHTML = (q.found.map(f => `<span class="chip" title="picked up from “${esc(f.via)}”">${esc(f.name)} <span class="via">(${esc(f.via)})</span><button type="button" data-remove="${esc(f.name)}" aria-label="Remove">×</button></span>`).join('')
+      + parsed.notRated.map(w => `<span class="chip soft" title="Read it, but it is not a rated condition in these guides">${esc(w)}: not rated</span>`).join(''))
+      || (q.health.trim() ? '<span class="muted">Nothing in that text matches a condition in the guides yet. Try the condition name (e.g. "diabetes", "copd", "stroke") or the medication.</span>' : '<span class="muted">Nothing entered: quoting as healthy.</span>');
+    $$('#q-chips [data-remove]').forEach(b => b.addEventListener('click', () => { q.excluded.push(b.dataset.remove); syncConditions(); if (q.results) runQuote(); }));
   }
   function readQuoteForm() {
     const form = $('#q-form'), q = ui.quote;
@@ -992,30 +1035,11 @@
     $$('#q-results .rule').forEach(el => el.addEventListener('click', () => el.classList.toggle('open')));
   }
   (function wireQuoter() {
-    const form = $('#q-form'), search = $('#q-cond-search'), list = $('#q-cond-list');
-    let active = 0;
-    const showList = () => {
-      const v = search.value.trim().toLowerCase();
-      if (!v) { list.hidden = true; return; }
-      const q = ui.quote, hits = conditionCatalog().filter(c => !q.conditions.includes(c.name) && (c.name.toLowerCase().includes(v) || c.tokens.some(t => t.startsWith(v)) || Object.entries(CONDITION_ALIASES).some(([k, n]) => k.includes(v) && findCondition(n) === c))).slice(0, 12);
-      active = Math.min(active, Math.max(0, hits.length - 1));
-      list.innerHTML = hits.length ? hits.map((c, i) => `<div data-name="${esc(c.name)}" class="${i === active ? 'active' : ''}">${esc(c.name)}</div>`).join('') : '<div class="none">No condition in the guides matches. Try another word (e.g. "heart", "kidney", "cancer").</div>';
-      list.hidden = false;
-    };
-    const pick = name => { if (!name) return; if (!ui.quote.conditions.includes(name)) ui.quote.conditions.push(name); search.value = ''; list.hidden = true; active = 0; renderChips(); if (ui.quote.results) runQuote(); };
-    search.addEventListener('input', () => { active = 0; showList(); });
-    search.addEventListener('focus', showList);
-    search.addEventListener('keydown', e => {
-      const items = $$('#q-cond-list [data-name]');
-      if (e.key === 'ArrowDown') { active = Math.min(active + 1, items.length - 1); showList(); e.preventDefault(); }
-      else if (e.key === 'ArrowUp') { active = Math.max(active - 1, 0); showList(); e.preventDefault(); }
-      else if (e.key === 'Enter') { e.preventDefault(); if (items[active]) pick(items[active].dataset.name); }
-      else if (e.key === 'Escape') list.hidden = true;
-    });
-    list.addEventListener('mousedown', e => { const d = e.target.closest('[data-name]'); if (d) { e.preventDefault(); pick(d.dataset.name); } });
-    document.addEventListener('click', e => { if (!e.target.closest('.cond-picker')) list.hidden = true; });
-    form.addEventListener('submit', e => { e.preventDefault(); runQuote(); });
-    $('#q-clear').addEventListener('click', () => { ui.quote = { conditions: [] }; form.reset(); renderQuoter(); $('#q-summary').textContent = ''; });
+    const form = $('#q-form'), health = $('#q-health');
+    let t = null;
+    health.addEventListener('input', () => { ui.quote.excluded = []; clearTimeout(t); t = setTimeout(() => { syncConditions(); if (ui.quote.results) runQuote(); }, 250); });
+    form.addEventListener('submit', e => { e.preventDefault(); clearTimeout(t); syncConditions(); runQuote(); });
+    $('#q-clear').addEventListener('click', () => { ui.quote = { conditions: [], excluded: [] }; form.reset(); health.value = ''; renderQuoter(); $('#q-summary').textContent = ''; });
   })();
 
   // ---------- boot ----------

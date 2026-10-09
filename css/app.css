@@ -324,3 +324,6 @@ details.section[open] > summary::before { content: "▾ "; }
 .pill.s-wholelife { background: #f0e9ff; color: #4d2f9c; border-color: #d7c8f7; }
 .pill.s-termiul { background: #e1f5e4; color: #146c2e; border-color: #b7e3c0; }
 .q-legend { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+.chip.soft { background: var(--surface-2); color: var(--text-2); font-weight: 500; }
+.chip .via { font-weight: 400; opacity: .75; font-size: 12px; }
+#q-health { min-height: 54px; }
